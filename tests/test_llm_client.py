@@ -2,7 +2,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from src.llm_client import AnthropicLLMClient, LLMClient, OpenAICompatibleLLMClient
+from src.llm_client import AnthropicLLMClient, GroqLLMClient, LLMClient, OpenAICompatibleLLMClient
 
 
 def test_anthropic_client_satisfies_protocol():
@@ -13,6 +13,43 @@ def test_anthropic_client_satisfies_protocol():
 def test_openai_compatible_client_satisfies_protocol():
     client = OpenAICompatibleLLMClient.__new__(OpenAICompatibleLLMClient)
     assert isinstance(client, LLMClient)
+
+
+def test_groq_client_satisfies_protocol():
+    client = GroqLLMClient.__new__(GroqLLMClient)
+    assert isinstance(client, LLMClient)
+
+
+async def test_groq_client_complete():
+    client = GroqLLMClient(api_key="test-key", model="openai/gpt-oss-120b")
+
+    response = MagicMock()
+    response.choices = [MagicMock()]
+    response.choices[0].message.content = "Hello from Groq"
+    client._client = MagicMock()
+    client._client.chat.completions.create = AsyncMock(return_value=response)
+
+    result = await client.complete(system="Be helpful", user="Hi", max_tokens=100)
+    assert result == "Hello from Groq"
+
+    call_kwargs = client._client.chat.completions.create.call_args.kwargs
+    assert call_kwargs["model"] == "openai/gpt-oss-120b"
+    assert call_kwargs["max_tokens"] == 100
+    messages = call_kwargs["messages"]
+    assert messages[0] == {"role": "system", "content": "Be helpful"}
+    assert messages[1] == {"role": "user", "content": "Hi"}
+
+
+async def test_groq_client_handles_no_choices():
+    client = GroqLLMClient(api_key="test-key", model="openai/gpt-oss-120b")
+
+    response = MagicMock()
+    response.choices = []
+    client._client = MagicMock()
+    client._client.chat.completions.create = AsyncMock(return_value=response)
+
+    result = await client.complete(system="Be helpful", user="Hi")
+    assert result == ""
 
 
 async def test_anthropic_client_complete():

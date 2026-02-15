@@ -1,4 +1,4 @@
-from src.llm_client import AnthropicLLMClient, OpenAICompatibleLLMClient
+from src.llm_client import AnthropicLLMClient, GroqLLMClient, OpenAICompatibleLLMClient
 from src.strategies.news import NewsPredictionStrategy
 from src.strategies.price_only import PriceOnlyStrategy
 
@@ -19,6 +19,12 @@ LLM_PROVIDERS = {
         "default_model": "claude-opus-4-6",
         "key_env": "ANTHROPIC_API_KEY",
         "description": "Anthropic Claude API",
+    },
+    "groq": {
+        "class": GroqLLMClient,
+        "default_model": "openai/gpt-oss-120b",
+        "key_env": "GROQ_API_KEY",
+        "description": "Groq API (fast inference)",
     },
     "openrouter": {
         "class": OpenAICompatibleLLMClient,

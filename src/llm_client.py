@@ -2,6 +2,7 @@ import logging
 from typing import Protocol, runtime_checkable
 
 from anthropic import AsyncAnthropic
+from groq import AsyncGroq
 from openai import AsyncOpenAI
 
 logger = logging.getLogger(__name__)
@@ -27,6 +28,32 @@ class AnthropicLLMClient:
             messages=[{"role": "user", "content": user}],
         )
         return response.content[0].text
+
+
+class GroqLLMClient:
+    def __init__(self, api_key: str, model: str) -> None:
+        self._client = AsyncGroq(api_key=api_key)
+        self._model = model
+
+    async def complete(self, system: str, user: str, max_tokens: int = 512) -> str:
+        response = await self._client.chat.completions.create(
+            model=self._model,
+            max_tokens=max_tokens,
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+        )
+        if not response.choices:
+            logger.warning("Groq API returned no choices: %s", response)
+            return ""
+        content = response.choices[0].message.content or ""
+        if not content:
+            logger.warning(
+                "Groq API returned empty content (finish_reason=%s, model=%s)",
+                response.choices[0].finish_reason, response.model,
+            )
+        return content
 
 
 class OpenAICompatibleLLMClient:
