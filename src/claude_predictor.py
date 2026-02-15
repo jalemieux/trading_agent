@@ -1,28 +1,26 @@
 import json
 import logging
-from dataclasses import dataclass
 from datetime import datetime, timezone
 
-from anthropic import AsyncAnthropic
-
 from src.events import PriceUpdate
+from src.llm_client import LLMClient
+from src.prediction import Prediction
 
 logger = logging.getLogger(__name__)
 
-
-@dataclass
-class Prediction:
-    target_price: float
-    timeframe_minutes: int
-    reasoning: str
-    current_price: float
-    timestamp: str
+SYSTEM_PROMPT = (
+    "You are a crypto price prediction analyst. Analyze the provided "
+    "price history and news to predict the short-term price target. "
+    "Respond ONLY with valid JSON in this exact format:\n"
+    '{"target_price": <float>, "timeframe_minutes": <int>, '
+    '"reasoning": "<brief explanation>"}\n'
+    "No other text."
+)
 
 
 class ClaudePredictor:
-    def __init__(self, api_key: str, model: str = "claude-opus-4-6") -> None:
-        self._model = model
-        self._client = AsyncAnthropic(api_key=api_key)
+    def __init__(self, client: LLMClient) -> None:
+        self._client = client
 
     async def predict(
         self, prices: list[PriceUpdate], headlines: list[str]
@@ -31,23 +29,14 @@ class ClaudePredictor:
             return None
 
         current_price = prices[-1].price
-        prompt = self._build_prompt(prices, headlines)
+        user_prompt = self._build_prompt(prices, headlines)
 
         try:
-            response = await self._client.messages.create(
-                model=self._model,
+            raw = await self._client.complete(
+                system=SYSTEM_PROMPT,
+                user=user_prompt,
                 max_tokens=512,
-                messages=[{"role": "user", "content": prompt}],
-                system=(
-                    "You are a crypto price prediction analyst. Analyze the provided "
-                    "price history and news to predict the short-term price target. "
-                    "Respond ONLY with valid JSON in this exact format:\n"
-                    '{"target_price": <float>, "timeframe_minutes": <int>, '
-                    '"reasoning": "<brief explanation>"}\n'
-                    "No other text."
-                ),
             )
-            raw = response.content[0].text
             data = json.loads(raw)
             return Prediction(
                 target_price=float(data["target_price"]),
