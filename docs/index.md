@@ -4,8 +4,6 @@
 
 **Coinbase Trading Bot** is an asynchronous, event-driven framework designed to bridge the gap between Large Language Model (LLM) reasoning and professional market execution. It provides a hardened infrastructure—Websocket management, order lifecycle persistence, and multi-stage risk validation—allowing developers to focus entirely on the strategy layer.
 
-**[Technical Specs](https://www.google.com/search?q=%23architecture)** • **[Risk Pipeline](https://www.google.com/search?q=%23risk-management)** • **[Intelligence Layer](https://www.google.com/search?q=%23intelligence-layer)** • **[Quick Start](https://www.google.com/search?q=%23quick-start)**
-
 ---
 
 ## System Architecture

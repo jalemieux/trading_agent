@@ -1,6 +1,7 @@
 # Coinbase Trading Bot
 
-Async trading bot for Coinbase Advanced Trade. Provides the execution plumbing -- market data, order management, risk controls, and position tracking -- so a strategy layer can simply emit `OrderRequest` events.
+**Coinbase Trading Bot** is an asynchronous, event-driven framework designed to bridge the gap between Large Language Model (LLM) reasoning and professional market execution. It provides a hardened infrastructure—Websocket management, order lifecycle persistence, and multi-stage risk validation—allowing developers to focus entirely on the strategy layer.
+
 
 Built with Python 3.12+, asyncio, and the official Coinbase SDK.
 
