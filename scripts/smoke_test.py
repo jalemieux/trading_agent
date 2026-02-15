@@ -13,7 +13,7 @@ from src.coinbase_client import CoinbaseClient
 from src.config import Settings
 from src.db import Database
 from src.event_bus import EventBus
-from src.events import OrderFilled, OrderRequest, PositionChanged
+from src.events import OrderFilled, OrderRequest, PositionChanged, PriceUpdate
 from src.kill_switch import KillSwitch
 from src.market_data import MarketData
 from src.order_manager import OrderManager
@@ -203,7 +203,40 @@ async def stage_connectivity(coinbase: CoinbaseClient) -> None:
         fail(f"get_product() failed: {e}")
 
 async def stage_market_data(market_data: MarketData, bus: EventBus) -> None:
-    pass
+    header(2, "Market Data (WebSocket)")
+
+    prices: list[float] = []
+    price_event = asyncio.Event()
+
+    async def on_price(event):
+        prices.append(event.price)
+        info(f"  tick #{len(prices)}: {event.product_id} = ${event.price}")
+        if len(prices) >= 3:
+            price_event.set()
+
+    bus.subscribe(PriceUpdate, on_price)
+
+    info(f"Subscribing to {PRODUCT_ID} ticker...")
+    try:
+        await market_data.start([PRODUCT_ID])
+        ok("WebSocket opened")
+    except Exception as e:
+        fail(f"WebSocket failed to open: {e}")
+        bus.unsubscribe(PriceUpdate, on_price)
+        return
+
+    info("Waiting for 3 price ticks (30s timeout)...")
+    try:
+        await asyncio.wait_for(price_event.wait(), timeout=30.0)
+        ok(f"Received {len(prices)} ticks — market data working")
+    except asyncio.TimeoutError:
+        warn(f"Only received {len(prices)} ticks in 30s")
+
+    bus.unsubscribe(PriceUpdate, on_price)
+
+    # Stop market data after test
+    await market_data.stop()
+    ok("WebSocket closed")
 
 async def stage_buy(bus: EventBus, filled: list, positions: list) -> None:
     pass
