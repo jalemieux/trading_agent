@@ -32,11 +32,14 @@ position_tracker.py← db, event_bus, events
 market_data.py     ← event_bus, events (wraps coinbase SDK)
 price_buffer.py    ← events
 news_service.py    ← no internal deps (wraps openai SDK)
-claude_predictor.py← events (wraps anthropic SDK)
-claude_price_only_predictor.py ← claude_predictor, events (wraps anthropic SDK)
-strategy_news_prediction.py ← price_buffer, news_service, claude_predictor, config, db, event_bus, events
+prediction.py      ← events
+llm_client.py      ← no internal deps (wraps anthropic + openai SDKs)
+claude_predictor.py← llm_client, prediction, events
+kimi_predictor.py  ← llm_client, prediction, events
+claude_price_only_predictor.py ← llm_client, prediction, events
+strategy_news_prediction.py ← price_buffer, news_service, prediction, config, db, event_bus, events
 strategy_price_only.py ← price_buffer, claude_price_only_predictor, config, db, event_bus, events
-main.py            ← all of the above (conditional imports based on strategy config)
+main.py            ← all of the above (conditional imports based on strategy + predictor_type config)
 ```
 
 ## Event Routing Table
@@ -77,9 +80,12 @@ src/
 ├── market_data.py:79        MarketData — WebSocket ticker + product ID resolution
 ├── price_buffer.py:25       PriceBuffer — in-memory ring buffer per product
 ├── news_service.py:41       NewsService — Grok xAI news/sentiment client
-├── claude_predictor.py:84   ClaudePredictor — Claude API predictions (news strategy)
-├── claude_price_only_predictor.py:67  ClaudePriceOnlyPredictor — Claude API price-only predictions
-├── strategy_news_prediction.py:165  NewsPredictionStrategy — timer-based AI strategy (price + news)
+├── prediction.py:19         Prediction dataclass + Predictor protocol
+├── llm_client.py:42         LLMClient protocol + AnthropicLLMClient + OpenAICompatibleLLMClient
+├── claude_predictor.py:74   ClaudePredictor — Claude predictions via LLMClient (news strategy)
+├── kimi_predictor.py:74     KimiPredictor — Kimi/OpenRouter predictions via LLMClient (news strategy)
+├── claude_price_only_predictor.py:66  ClaudePriceOnlyPredictor — price-only predictions via LLMClient
+├── strategy_news_prediction.py:205  NewsPredictionStrategy — timer-based AI strategy (price + news)
 └── strategy_price_only.py:154  PriceOnlyStrategy — timer-based AI strategy (price only)
 
 tests/
@@ -95,10 +101,14 @@ tests/
 ├── test_integration.py      2 tests
 ├── test_price_buffer.py     5 tests
 ├── test_news_service.py     2 tests
-├── test_claude_predictor.py 4 tests
+├── test_prediction.py       2 tests
+├── test_llm_client.py       5 tests
+├── test_claude_predictor.py 5 tests
+├── test_kimi_predictor.py   6 tests
+├── test_config.py           2 tests
 ├── test_config_prediction.py 3 tests
 ├── test_claude_price_only_predictor.py 5 tests
-├── test_strategy_news_prediction.py 8 tests
+├── test_strategy_news_prediction.py 9 tests
 └── test_strategy_price_only.py 7 tests
-                             ── 82 total
+                             ── 103 total
 ```

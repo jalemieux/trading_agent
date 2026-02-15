@@ -38,6 +38,7 @@ class Settings(BaseSettings):
     max_daily_loss_usd: float = 500.0
     db_path: str = "trading_bot.db"
     strategy: str = "price_only"  # "price_only" or "news"
+    predictor_type: str = "claude"  # "claude" or "kimi"
     anthropic_api_key: str = ""
     grok_api_key: str = ""
     prediction_interval_minutes: int = 5
@@ -46,6 +47,9 @@ class Settings(BaseSettings):
     trade_threshold_pct: float = 1.0
     trade_size_usd: float = 50.0
     product_id: str = "BTC-USD"
+    openrouter_api_key: str = ""
+    openrouter_model: str = "moonshotai/kimi-k2"
+    openrouter_base_url: str = "https://openrouter.ai/api/v1"
 ```
 
 Loads from `.env` file via pydantic-settings. Env var names are UPPER_SNAKE_CASE versions of field names.
@@ -290,12 +294,15 @@ Initialization order:
 8. PositionTracker(db, bus) → register(bus)
 9. MarketData(bus, key, secret, key_file)
 10. PriceBuffer(max_size=50)
-11. Strategy selection (conditional):
-    - If `strategy == "news"`: import NewsService, ClaudePredictor, NewsPredictionStrategy
-    - Else (default): import ClaudePriceOnlyPredictor, PriceOnlyStrategy
-12. strategy.register(bus) — subscribes to PriceUpdate
-13. await market_data.start(product_ids=[settings.product_id])
-14. await strategy.start() — launches prediction loop
+11. LLM client creation based on `predictor_type`:
+    - If `predictor_type == "kimi"`: OpenAICompatibleLLMClient (OpenRouter)
+    - Else (default): AnthropicLLMClient
+12. Strategy selection (conditional):
+    - If `strategy == "news"`: predictor (ClaudePredictor or KimiPredictor based on predictor_type), NewsService, NewsPredictionStrategy
+    - Else (default): ClaudePriceOnlyPredictor (always uses LLMClient), PriceOnlyStrategy
+13. strategy.register(bus) — subscribes to PriceUpdate
+14. await market_data.start(product_ids=[settings.product_id])
+15. await strategy.start() — launches prediction loop
 
 Shutdown:
 - SIGINT/SIGTERM → sets asyncio.Event
@@ -350,7 +357,7 @@ Dependencies: openai SDK
 
 ---
 
-## ClaudePredictor — `src/claude_predictor.py`
+## Prediction & Predictor Protocol — `src/prediction.py`
 
 ```
 @dataclass
@@ -361,21 +368,81 @@ class Prediction:
     current_price: float
     timestamp: str
 
+@runtime_checkable
+class Predictor(Protocol):
+    async def predict(self, prices: list[PriceUpdate], headlines: list[str]) → Prediction | None: ...
+```
+
+Shared data model and protocol for all predictors. `Predictor` is runtime-checkable for isinstance() validation.
+
+Dependencies: events
+
+---
+
+## LLMClient Protocol — `src/llm_client.py`
+
+```
+@runtime_checkable
+class LLMClient(Protocol):
+    async def complete(self, system: str, user: str, max_tokens: int = 512) → str: ...
+
+class AnthropicLLMClient:
+    __init__(api_key: str, model: str)
+    complete(system, user, max_tokens=512) → str  # async
+
+class OpenAICompatibleLLMClient:
+    __init__(api_key: str, model: str, base_url: str)
+    complete(system, user, max_tokens=512) → str  # async
+```
+
+Transport-level LLM abstraction. `AnthropicLLMClient` wraps the Anthropic Messages API. `OpenAICompatibleLLMClient` wraps any OpenAI-compatible API (e.g., OpenRouter).
+
+Behavior:
+- AnthropicLLMClient: sends system param + user message to Anthropic, returns `response.content[0].text`
+- OpenAICompatibleLLMClient: sends system + user as chat messages, returns `response.choices[0].message.content` (empty string if None)
+
+Dependencies: anthropic SDK, openai SDK
+
+---
+
+## ClaudePredictor — `src/claude_predictor.py`
+
+```
 class ClaudePredictor:
-    __init__(api_key: str, model: str = "claude-opus-4-6")
+    __init__(client: LLMClient)
     predict(prices: list[PriceUpdate], headlines: list[str]) → Prediction | None  # async
 ```
 
 Internal state:
-- `_model: str`
-- `_client: AsyncAnthropic`
+- `_client: LLMClient`
 
 Behavior:
-- Sends price history + headlines to Claude API as a structured prompt
+- Sends price history + headlines to LLM via LLMClient.complete()
 - Parses JSON response into a Prediction dataclass
 - Returns None on any failure (API error, malformed response, parsing error)
 
-Dependencies: anthropic SDK, events
+Dependencies: llm_client, prediction, events
+
+---
+
+## KimiPredictor — `src/kimi_predictor.py`
+
+```
+class KimiPredictor:
+    __init__(client: LLMClient)
+    predict(prices: list[PriceUpdate], headlines: list[str]) → Prediction | None  # async
+```
+
+Internal state:
+- `_client: LLMClient`
+
+Behavior:
+- Same contract as ClaudePredictor but with a quantitative-analyst-focused system prompt
+- Satisfies the Predictor protocol (runtime-checkable)
+- Designed for use with OpenRouter via OpenAICompatibleLLMClient
+- Returns None on any failure
+
+Dependencies: llm_client, prediction, events
 
 ---
 
@@ -396,7 +463,7 @@ Internal state:
 - `_bus: EventBus`
 - `_price_buffer: PriceBuffer`
 - `_news_service: NewsService`
-- `_predictor: ClaudePredictor`
+- `_predictor: Predictor` (any predictor satisfying the Predictor protocol)
 - `_settings: Settings`
 - `_product_id: str`
 - `_db: Database | None`
@@ -410,8 +477,9 @@ Behavior:
 - If predicted price differs from current by more than `trade_threshold_pct`, emits OrderRequest (BUY if higher, SELL if lower)
 - stop() cancels the timer task
 - Selected when `strategy = "news"` in config
+- Accepts any Predictor (ClaudePredictor, KimiPredictor, etc.)
 
-Dependencies: PriceBuffer, NewsService, ClaudePredictor, EventBus, Database, Settings
+Dependencies: PriceBuffer, NewsService, Predictor protocol, EventBus, Database, Settings
 
 ---
 
@@ -454,18 +522,18 @@ Dependencies: PriceBuffer, ClaudePriceOnlyPredictor, EventBus, Database, Setting
 
 ```
 class ClaudePriceOnlyPredictor:
-    __init__(api_key: str, model: str = "claude-opus-4-6")
+    __init__(client: LLMClient)
     predict(prices: list[PriceUpdate]) → Prediction | None  # async
 ```
 
 Internal state:
-- `_model: str`
-- `_client: AsyncAnthropic`
+- `_client: LLMClient`
 
 Behavior:
-- Sends price history only (no news) to Claude API as a structured prompt
+- Sends price history only (no news) to LLM via LLMClient.complete()
 - System prompt focuses on technical analysis and price action patterns
-- Parses JSON response into a Prediction dataclass (reuses from claude_predictor)
+- Parses JSON response into a Prediction dataclass
 - Returns None on any failure (API error, malformed response, empty prices)
+- Note: does NOT satisfy the Predictor protocol (different predict() signature — no headlines param)
 
-Dependencies: anthropic SDK, events, claude_predictor (Prediction dataclass)
+Dependencies: llm_client, prediction, events
