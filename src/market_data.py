@@ -12,14 +12,16 @@ logger = logging.getLogger(__name__)
 
 
 class MarketData:
-    def __init__(self, bus: EventBus, api_key: str, api_secret: str) -> None:
+    def __init__(self, bus: EventBus, api_key: str = "", api_secret: str = "", key_file: str = "") -> None:
         self._bus = bus
         self._loop: asyncio.AbstractEventLoop | None = None
-        self._ws = WSClient(
-            api_key=api_key,
-            api_secret=api_secret,
-            on_message=lambda msg: self._schedule_on_message(msg),
-        )
+        ws_kwargs: dict = {"on_message": lambda msg: self._schedule_on_message(msg)}
+        if key_file:
+            ws_kwargs["key_file"] = key_file
+        else:
+            ws_kwargs["api_key"] = api_key
+            ws_kwargs["api_secret"] = api_secret
+        self._ws = WSClient(**ws_kwargs)
 
     def _schedule_on_message(self, msg: str) -> None:
         if self._loop:

@@ -97,6 +97,7 @@ async def run() -> None:
     coinbase = CoinbaseClient(
         api_key=settings.coinbase_api_key,
         api_secret=settings.coinbase_api_secret,
+        key_file=settings.coinbase_key_file,
     )
 
     order_manager = OrderManager(db=db, bus=bus, risk_manager=risk_manager, coinbase=coinbase)
@@ -109,6 +110,7 @@ async def run() -> None:
         bus=bus,
         api_key=settings.coinbase_api_key,
         api_secret=settings.coinbase_api_secret,
+        key_file=settings.coinbase_key_file,
     )
 
     # Collectors for events during each stage
@@ -178,11 +180,12 @@ async def stage_connectivity(coinbase: CoinbaseClient) -> None:
     info("Fetching accounts...")
     try:
         accounts_resp = coinbase.get_accounts()
-        accounts = accounts_resp.get("accounts", [])
+        accounts = getattr(accounts_resp, "accounts", []) or []
         ok(f"Connected — {len(accounts)} account(s) found")
         for acct in accounts:
-            currency = acct.get("currency", "?")
-            available = acct.get("available_balance", {}).get("value", "0")
+            currency = getattr(acct, "currency", "?")
+            balance = getattr(acct, "available_balance", None)
+            available = getattr(balance, "value", "0") if balance else "0"
             if float(available) > 0:
                 info(f"  {currency}: {available}")
     except Exception as e:
@@ -193,10 +196,10 @@ async def stage_connectivity(coinbase: CoinbaseClient) -> None:
     info(f"Fetching product info for {PRODUCT_ID}...")
     try:
         product = coinbase.get_product(PRODUCT_ID)
-        price = product.get("price", "?")
-        status = product.get("status", "?")
-        base_min = product.get("base_min_size", "?")
-        quote_min = product.get("quote_min_size", "?")
+        price = getattr(product, "price", "?")
+        status = getattr(product, "status", "?")
+        base_min = getattr(product, "base_min_size", "?")
+        quote_min = getattr(product, "quote_min_size", "?")
         ok(f"{PRODUCT_ID} — price: ${price}, status: {status}")
         info(f"  min base: {base_min}, min quote: {quote_min}")
     except Exception as e:

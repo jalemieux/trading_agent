@@ -6,8 +6,11 @@ logger = logging.getLogger(__name__)
 
 
 class CoinbaseClient:
-    def __init__(self, api_key: str, api_secret: str) -> None:
-        self._client = RESTClient(api_key=api_key, api_secret=api_secret)
+    def __init__(self, api_key: str = "", api_secret: str = "", key_file: str = "") -> None:
+        if key_file:
+            self._client = RESTClient(key_file=key_file)
+        else:
+            self._client = RESTClient(api_key=api_key, api_secret=api_secret)
 
     def market_buy(self, client_order_id: str, product_id: str, quote_size: str) -> dict:
         return self._client.market_order_buy(

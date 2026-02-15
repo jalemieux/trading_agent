@@ -42,6 +42,7 @@ async def main() -> None:
     coinbase = CoinbaseClient(
         api_key=settings.coinbase_api_key,
         api_secret=settings.coinbase_api_secret,
+        key_file=settings.coinbase_key_file,
     )
 
     # Order manager
@@ -57,6 +58,7 @@ async def main() -> None:
         bus=bus,
         api_key=settings.coinbase_api_key,
         api_secret=settings.coinbase_api_secret,
+        key_file=settings.coinbase_key_file,
     )
 
     logger.info("All components initialized. Starting market data...")
