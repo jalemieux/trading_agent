@@ -232,29 +232,34 @@ Precondition: open position BTC-USD, entry_price=50000, qty=0.004
 ## Startup Trace (main.py)
 
 ```
-1.  Settings()                          main.py:25    loads .env
-2.  EventBus()                          main.py:26
-3.  Database(db_path)                   main.py:29
-4.  await db.initialize()               main.py:30    creates tables, seeds kill_switch
-5.  KillSwitch(db, bus)                 main.py:34
-6.  await kill_switch.initialize()      main.py:35    loads persisted state
-7.  RiskManager(db, bus, ks, settings)  main.py:40
-8.  CoinbaseClient(key, secret, key_file)  main.py:43  creates RESTClient (no network call)
-9.  OrderManager(db, bus, rm, cb)       main.py:50
-10. order_manager.register(bus)         main.py:51    subscribes to OrderRequest
-11. PositionTracker(db, bus)            main.py:54
-12. position_tracker.register(bus)      main.py:55    subscribes to OrderFilled
-13. MarketData(bus, key, secret, key_file)  main.py:58  creates WSClient (no connection yet)
-14. PriceBuffer(max_size=50)            main.py:66
-15. Strategy selection (conditional)    main.py:68-106
-    - "news" → NewsPredictionStrategy(bus, price_buffer, news_service, predictor, settings, product_id, db)
-    - else   → PriceOnlyStrategy(bus, price_buffer, predictor, settings, product_id, db)
-16. strategy.register(bus)              main.py:106   subscribes to PriceUpdate
-17. Signal handlers registered          main.py:119-121
-18. await market_data.start([product_id])  main.py:124  opens WS, subscribes to ticker
-19. await strategy.start()              main.py:125   launches prediction loop task
-20. await stop_event.wait()             main.py:129   blocks until SIGINT/SIGTERM
-21. await strategy.stop()               main.py:132
-22. await market_data.stop()            main.py:133
-23. await db.close()                    main.py:134
+1.  parse_args()                         main.py:27    --strategy, --llm, --model
+2.  Settings()                           main.py:52    loads .env
+3.  EventBus()                           main.py:53
+4.  Database(db_path)                    main.py:57
+5.  await db.initialize()                main.py:58    creates tables, seeds kill_switch
+6.  KillSwitch(db, bus)                  main.py:62
+7.  await kill_switch.initialize()       main.py:63    loads persisted state
+8.  RiskManager(db, bus, ks, settings)   main.py:68
+9.  CoinbaseClient(key, secret, key_file)  main.py:71
+10. OrderManager(db, bus, rm, cb)        main.py:78
+11. order_manager.register(bus)          main.py:79    subscribes to OrderRequest
+12. PositionTracker(db, bus)             main.py:82
+13. position_tracker.register(bus)       main.py:83    subscribes to OrderFilled
+14. PortfolioTracker(db, bus, cb, ...)   main.py:86
+15. MarketData(bus, key, secret, key_file, db)  main.py:95
+16. LLM client from LLM_PROVIDERS[args.llm]    main.py:104-115
+17. PriceBuffer(max_size=50)             main.py:118
+18. Strategy from STRATEGIES[args.strategy]     main.py:120-138
+    - "news" → NewsService injected, NewsPredictionStrategy(llm_client, news_service, **kwargs)
+    - "price_only" → PriceOnlyStrategy(llm_client, **kwargs)
+19. strategy.register(bus)               main.py:139   subscribes to PriceUpdate
+20. Signal handlers registered           main.py:148-154
+21. await market_data.start([product_id])  main.py:157
+22. await strategy.start()               main.py:158   launches prediction loop task
+23. await portfolio_tracker.start()      main.py:159
+24. await stop_event.wait()              main.py:163   blocks until SIGINT/SIGTERM
+25. await portfolio_tracker.stop()       main.py:166
+26. await strategy.stop()                main.py:167
+27. await market_data.stop()             main.py:168
+28. await db.close()                     main.py:169
 ```

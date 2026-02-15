@@ -37,19 +37,14 @@ class Settings(BaseSettings):
     max_order_size_usd: float = 100.0
     max_daily_loss_usd: float = 500.0
     db_path: str = "trading_bot.db"
-    strategy: str = "price_only"  # "price_only" or "news"
-    predictor_type: str = "claude"  # "claude" or "kimi"
     anthropic_api_key: str = ""
     grok_api_key: str = ""
+    openrouter_api_key: str = ""
     prediction_interval_minutes: int = 5
-    prediction_model: str = "claude-opus-4-6"
     grok_model: str = "grok-3-mini-fast"
     trade_threshold_pct: float = 1.0
     trade_size_usd: float = 50.0
     product_id: str = "BTC-USD"
-    openrouter_api_key: str = ""
-    openrouter_model: str = "moonshotai/kimi-k2"
-    openrouter_base_url: str = "https://openrouter.ai/api/v1"
 ```
 
 Loads from `.env` file via pydantic-settings. Env var names are UPPER_SNAKE_CASE versions of field names.
@@ -283,29 +278,35 @@ Dependencies: EventBus, coinbase-advanced-py (coinbase.websocket.WSClient)
 
 ## main() — `src/main.py`
 
+CLI args (via argparse):
+- `--strategy`: `price_only` (default) or `news` — selects from `STRATEGIES` registry
+- `--llm`: `anthropic` (default) or `openrouter` — selects from `LLM_PROVIDERS` registry
+- `--model`: LLM model ID (default from provider config)
+
 Initialization order:
-1. Settings()
-2. EventBus()
-3. Database(settings.db_path) → await initialize()
-4. KillSwitch(db, bus) → await initialize()
-5. RiskManager(db, bus, kill_switch, settings)
-6. CoinbaseClient(key, secret, key_file)
-7. OrderManager(db, bus, risk_manager, coinbase) → register(bus)
-8. PositionTracker(db, bus) → register(bus)
-9. MarketData(bus, key, secret, key_file)
-10. PriceBuffer(max_size=50)
-11. LLM client creation based on `predictor_type`:
-    - If `predictor_type == "kimi"`: OpenAICompatibleLLMClient (OpenRouter)
-    - Else (default): AnthropicLLMClient
-12. Strategy selection (conditional):
-    - If `strategy == "news"`: predictor (ClaudePredictor or KimiPredictor based on predictor_type), NewsService, NewsPredictionStrategy
-    - Else (default): ClaudePriceOnlyPredictor (always uses LLMClient), PriceOnlyStrategy
-13. strategy.register(bus) — subscribes to PriceUpdate
-14. await market_data.start(product_ids=[settings.product_id])
-15. await strategy.start() — launches prediction loop
+1. parse_args() — CLI flags
+2. Settings() — env vars
+3. EventBus()
+4. Database(settings.db_path) → await initialize()
+5. KillSwitch(db, bus) → await initialize()
+6. RiskManager(db, bus, kill_switch, settings)
+7. CoinbaseClient(key, secret, key_file)
+8. OrderManager(db, bus, risk_manager, coinbase) → register(bus)
+9. PositionTracker(db, bus) → register(bus)
+10. PortfolioTracker(db, bus, coinbase, product_id, interval)
+11. MarketData(bus, key, secret, key_file, db)
+12. LLM client from registry: `LLM_PROVIDERS[args.llm]["class"](**provider_kwargs)`
+13. PriceBuffer(max_size=50)
+14. Strategy from registry: `STRATEGIES[args.strategy]["class"](**strategy_kwargs)`
+    - News strategy additionally gets NewsService injected
+15. strategy.register(bus) — subscribes to PriceUpdate
+16. await market_data.start(product_ids=[settings.product_id])
+17. await strategy.start() — launches prediction loop
+18. await portfolio_tracker.start()
 
 Shutdown:
 - SIGINT/SIGTERM → sets asyncio.Event
+- await portfolio_tracker.stop()
 - await strategy.stop()
 - await market_data.stop()
 - await db.close()
@@ -357,7 +358,7 @@ Dependencies: openai SDK
 
 ---
 
-## Prediction & Predictor Protocol — `src/prediction.py`
+## Prediction — `src/prediction.py`
 
 ```
 @dataclass
@@ -368,14 +369,12 @@ class Prediction:
     current_price: float
     timestamp: str
 
-@runtime_checkable
-class Predictor(Protocol):
-    async def predict(self, prices: list[PriceUpdate], headlines: list[str]) → Prediction | None: ...
+def parse_prediction(raw: str, current_price: float) → Prediction | None
 ```
 
-Shared data model and protocol for all predictors. `Predictor` is runtime-checkable for isinstance() validation.
+Shared data model for predictions. `parse_prediction()` strips markdown code fences, parses JSON, and returns a `Prediction` or `None` on failure.
 
-Dependencies: events
+Dependencies: none
 
 ---
 
@@ -405,55 +404,19 @@ Dependencies: anthropic SDK, openai SDK
 
 ---
 
-## ClaudePredictor — `src/claude_predictor.py`
+## Strategy ABC — `src/strategy.py`
 
 ```
-class ClaudePredictor:
-    __init__(client: LLMClient)
-    predict(prices: list[PriceUpdate], headlines: list[str]) → Prediction | None  # async
-```
-
-Internal state:
-- `_client: LLMClient`
-
-Behavior:
-- Sends price history + headlines to LLM via LLMClient.complete()
-- Parses JSON response into a Prediction dataclass
-- Returns None on any failure (API error, malformed response, parsing error)
-
-Dependencies: llm_client, prediction, events
-
----
-
-## KimiPredictor — `src/kimi_predictor.py`
-
-```
-class KimiPredictor:
-    __init__(client: LLMClient)
-    predict(prices: list[PriceUpdate], headlines: list[str]) → Prediction | None  # async
-```
-
-Internal state:
-- `_client: LLMClient`
-
-Behavior:
-- Same contract as ClaudePredictor but with a quantitative-analyst-focused system prompt
-- Satisfies the Predictor protocol (runtime-checkable)
-- Designed for use with OpenRouter via OpenAICompatibleLLMClient
-- Returns None on any failure
-
-Dependencies: llm_client, prediction, events
-
----
-
-## NewsPredictionStrategy — `src/strategy_news_prediction.py`
-
-```
-class NewsPredictionStrategy:
-    __init__(bus, price_buffer, news_service, predictor, settings, product_id="BTC-USD", db=None)
-    register(bus) → None
-    start() → None  # async, starts timer loop
-    stop() → None   # async, cancels timer
+class Strategy(abc.ABC):
+    __init__(bus: EventBus, price_buffer: PriceBuffer, settings: Settings,
+             product_id: str = "BTC-USD", db: Database | None = None)
+    register(bus: EventBus) → None
+    start() → None   # async, starts timer loop
+    stop() → None    # async, cancels timer
+    _gather_and_predict() → Prediction | None  # async, abstract
+    _evaluate(prediction: Prediction) → None   # async
+    _has_open_position() → bool                # async
+    _get_position_quantity() → float           # async
 ```
 
 Subscribes to: PriceUpdate
@@ -462,8 +425,6 @@ Publishes: OrderRequest
 Internal state:
 - `_bus: EventBus`
 - `_price_buffer: PriceBuffer`
-- `_news_service: NewsService`
-- `_predictor: Predictor` (any predictor satisfying the Predictor protocol)
 - `_settings: Settings`
 - `_product_id: str`
 - `_db: Database | None`
@@ -471,69 +432,78 @@ Internal state:
 
 Behavior:
 - register() subscribes to PriceUpdate, delegates to _on_price which feeds the PriceBuffer
-- start() launches an asyncio task that runs a prediction loop on a timer
-- Timer fires every `prediction_interval_minutes` minutes
-- Each cycle: snapshot prices → fetch headlines → predict → evaluate prediction vs current price
-- If predicted price differs from current by more than `trade_threshold_pct`, emits OrderRequest (BUY if higher, SELL if lower)
-- stop() cancels the timer task
-- Selected when `strategy = "news"` in config
-- Accepts any Predictor (ClaudePredictor, KimiPredictor, etc.)
+- start() launches an asyncio task running _prediction_loop (30s initial delay, then timer)
+- _prediction_loop fires every `prediction_interval_minutes` minutes, calls _run_prediction_cycle
+- _run_prediction_cycle: snapshot prices → _gather_and_predict() → _evaluate()
+- _evaluate: computes diff_pct, checks position state, emits BUY/SELL OrderRequest if threshold exceeded
+- _has_open_position and _get_position_quantity query the DB for open positions
+- Concrete strategies only need to implement _gather_and_predict()
 
-Dependencies: PriceBuffer, NewsService, Predictor protocol, EventBus, Database, Settings
+Dependencies: config, db, event_bus, events, prediction, price_buffer
 
 ---
 
-## PriceOnlyStrategy — `src/strategy_price_only.py`
+## PriceOnlyStrategy — `src/strategies/price_only.py`
 
 ```
-class PriceOnlyStrategy:
-    __init__(bus, price_buffer, predictor, settings, product_id="BTC-USD", db=None)
-    register(bus) → None
-    start() → None  # async, starts timer loop
-    stop() → None   # async, cancels timer
+class PriceOnlyStrategy(Strategy):
+    __init__(llm_client: LLMClient, **kwargs)
+    _gather_and_predict() → Prediction | None  # async
+    _build_prompt(prices) → str
 ```
-
-Subscribes to: PriceUpdate
-Publishes: OrderRequest
 
 Internal state:
-- `_bus: EventBus`
-- `_price_buffer: PriceBuffer`
-- `_predictor: ClaudePriceOnlyPredictor`
-- `_settings: Settings`
-- `_product_id: str`
-- `_db: Database | None`
-- `_task: asyncio.Task | None`
+- `_llm_client: LLMClient`
+- Inherits all state from Strategy ABC
 
 Behavior:
-- Same loop/evaluate/position pattern as NewsPredictionStrategy but without news
-- register() subscribes to PriceUpdate, delegates to _on_price which feeds the PriceBuffer
-- start() launches an asyncio task that runs a prediction loop (30s initial delay, then timer)
-- Each cycle: snapshot prices → predict (price-only) → evaluate prediction vs current price
-- If predicted price differs from current by more than `trade_threshold_pct`, emits OrderRequest
+- Overrides _gather_and_predict(): snapshots prices, builds a technical-analysis prompt, calls LLMClient.complete(), parses response via parse_prediction()
+- System prompt focuses on price action and technical patterns
 - No news_service dependency
-- Selected when `strategy = "price_only"` in config (default)
+- Selected via `--strategy price_only` (default)
 
-Dependencies: PriceBuffer, ClaudePriceOnlyPredictor, EventBus, Database, Settings
+Dependencies: llm_client, prediction, price_buffer, strategy
 
 ---
 
-## ClaudePriceOnlyPredictor — `src/claude_price_only_predictor.py`
+## NewsPredictionStrategy — `src/strategies/news.py`
 
 ```
-class ClaudePriceOnlyPredictor:
-    __init__(client: LLMClient)
-    predict(prices: list[PriceUpdate]) → Prediction | None  # async
+class NewsPredictionStrategy(Strategy):
+    __init__(llm_client: LLMClient, news_service: NewsService, **kwargs)
+    _gather_and_predict() → Prediction | None  # async
+    _build_prompt(prices, headlines: list[str]) → str
+    _log_prediction(prediction: Prediction, headlines: list[str]) → None  # async
 ```
 
 Internal state:
-- `_client: LLMClient`
+- `_llm_client: LLMClient`
+- `_news_service: NewsService`
+- Inherits all state from Strategy ABC
 
 Behavior:
-- Sends price history only (no news) to LLM via LLMClient.complete()
-- System prompt focuses on technical analysis and price action patterns
-- Parses JSON response into a Prediction dataclass
-- Returns None on any failure (API error, malformed response, empty prices)
-- Note: does NOT satisfy the Predictor protocol (different predict() signature — no headlines param)
+- Overrides _gather_and_predict(): snapshots prices, fetches headlines via NewsService, builds prompt with both, calls LLMClient.complete(), parses via parse_prediction()
+- Logs predictions and headlines to DB (predictions + news_history tables)
+- Selected via `--strategy news`
 
-Dependencies: llm_client, prediction, events
+Dependencies: llm_client, news_service, prediction, strategy
+
+---
+
+## Registry — `src/registry.py`
+
+```
+STRATEGIES = {
+    "price_only": {"class": PriceOnlyStrategy, "description": "..."},
+    "news": {"class": NewsPredictionStrategy, "description": "..."},
+}
+
+LLM_PROVIDERS = {
+    "anthropic": {"class": AnthropicLLMClient, "default_model": "claude-opus-4-6", "key_env": "ANTHROPIC_API_KEY", ...},
+    "openrouter": {"class": OpenAICompatibleLLMClient, "default_model": "moonshotai/kimi-k2", "key_env": "OPENROUTER_API_KEY", "base_url": "...", ...},
+}
+```
+
+Lookup dicts used by `main.py` to wire strategy + LLM provider from CLI args. Adding a new strategy or LLM provider is a single dict entry.
+
+Dependencies: llm_client, strategies/news, strategies/price_only

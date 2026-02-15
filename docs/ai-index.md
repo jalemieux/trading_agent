@@ -14,7 +14,7 @@ Async event-driven trading bot. Single-process, single-threaded asyncio. Compone
 
 Entry point: `src/main.py` → `asyncio.run(main())`
 
-Run: `python -m src.main`
+Run: `python -m src.main --strategy price_only --llm anthropic --model claude-opus-4-6`
 Test: `pytest tests/ -v`
 
 ## Dependency Graph (import order)
@@ -32,14 +32,13 @@ position_tracker.py← db, event_bus, events
 market_data.py     ← event_bus, events (wraps coinbase SDK)
 price_buffer.py    ← events
 news_service.py    ← no internal deps (wraps openai SDK)
-prediction.py      ← events
+prediction.py      ← no internal deps
 llm_client.py      ← no internal deps (wraps anthropic + openai SDKs)
-claude_predictor.py← llm_client, prediction, events
-kimi_predictor.py  ← llm_client, prediction, events
-claude_price_only_predictor.py ← llm_client, prediction, events
-strategy_news_prediction.py ← price_buffer, news_service, prediction, config, db, event_bus, events
-strategy_price_only.py ← price_buffer, claude_price_only_predictor, config, db, event_bus, events
-main.py            ← all of the above (conditional imports based on strategy + predictor_type config)
+strategy.py        ← config, db, event_bus, events, prediction, price_buffer
+strategies/price_only.py ← llm_client, prediction, price_buffer, strategy
+strategies/news.py ← llm_client, news_service, prediction, strategy
+registry.py        ← llm_client, strategies/news, strategies/price_only
+main.py            ← all of the above (CLI args select strategy + LLM provider via registry)
 ```
 
 ## Event Routing Table
@@ -49,10 +48,10 @@ EventBus subscriptions (registered in main.py):
 
 OrderRequest   → OrderManager._handle_order_request
 OrderFilled    → PositionTracker._handle_order_filled
-PriceUpdate    → PriceOnlyStrategy._on_price (default) or NewsPredictionStrategy._on_price
+PriceUpdate    → Strategy._on_price (base class; PriceOnlyStrategy or NewsPredictionStrategy)
 
 Published by:
-OrderRequest      — published by PriceOnlyStrategy or NewsPredictionStrategy (BUY/SELL decisions)
+OrderRequest      — published by Strategy._evaluate() (BUY/SELL decisions from any strategy)
 PriceUpdate       — published by MarketData
 
 Not subscribed (published only):
@@ -67,8 +66,8 @@ KillSwitchActivated — published by KillSwitch, no consumer yet
 ```
 src/
 ├── __init__.py              empty
-├── main.py:139              entry point, component wiring, strategy selection, signal handlers
-├── config.py:25             Settings(BaseSettings) — env vars (incl. coinbase_key_file, product_id)
+├── main.py:174              entry point, CLI args, component wiring, strategy selection, signal handlers
+├── config.py:25             Settings(BaseSettings) — env vars (API keys, trading params)
 ├── event_bus.py:26          EventBus — subscribe/unsubscribe/publish
 ├── events.py:63             7 frozen dataclasses
 ├── db.py:80                 Database — aiosqlite wrapper + schema
@@ -80,13 +79,14 @@ src/
 ├── market_data.py:79        MarketData — WebSocket ticker + product ID resolution
 ├── price_buffer.py:25       PriceBuffer — in-memory ring buffer per product
 ├── news_service.py:41       NewsService — Grok xAI news/sentiment client
-├── prediction.py:19         Prediction dataclass + Predictor protocol
+├── prediction.py:37         Prediction dataclass + parse_prediction() helper
 ├── llm_client.py:42         LLMClient protocol + AnthropicLLMClient + OpenAICompatibleLLMClient
-├── claude_predictor.py:74   ClaudePredictor — Claude predictions via LLMClient (news strategy)
-├── kimi_predictor.py:74     KimiPredictor — Kimi/OpenRouter predictions via LLMClient (news strategy)
-├── claude_price_only_predictor.py:66  ClaudePriceOnlyPredictor — price-only predictions via LLMClient
-├── strategy_news_prediction.py:205  NewsPredictionStrategy — timer-based AI strategy (price + news)
-└── strategy_price_only.py:154  PriceOnlyStrategy — timer-based AI strategy (price only)
+├── strategy.py:158          Strategy ABC — shared timer loop, evaluation, position checks
+├── registry.py:30           STRATEGIES + LLM_PROVIDERS registries
+├── strategies/
+│   ├── __init__.py          empty
+│   ├── price_only.py:57     PriceOnlyStrategy(Strategy) — price-only prompts + LLMClient
+│   └── news.py:115          NewsPredictionStrategy(Strategy) — price+news prompts + LLMClient
 
 tests/
 ├── test_event_bus.py        5 tests
@@ -103,12 +103,12 @@ tests/
 ├── test_news_service.py     2 tests
 ├── test_prediction.py       2 tests
 ├── test_llm_client.py       5 tests
-├── test_claude_predictor.py 5 tests
-├── test_kimi_predictor.py   6 tests
 ├── test_config.py           2 tests
 ├── test_config_prediction.py 3 tests
-├── test_claude_price_only_predictor.py 5 tests
-├── test_strategy_news_prediction.py 9 tests
-└── test_strategy_price_only.py 7 tests
-                             ── 103 total
+├── test_strategy_base.py    tests for Strategy ABC
+├── test_strategies_price_only.py  tests for PriceOnlyStrategy
+├── test_strategies_news.py  tests for NewsPredictionStrategy
+├── test_registry.py         tests for registry
+└── test_portfolio_tracker.py  tests for PortfolioTracker
+                             ── 96 total
 ```

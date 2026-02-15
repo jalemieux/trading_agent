@@ -6,61 +6,111 @@ How to add new capabilities to the trading bot.
 
 ## Adding a Strategy (most common extension)
 
-A strategy subscribes to PriceUpdate events and publishes OrderRequest events.
+Strategies extend the `Strategy` ABC and implement `_gather_and_predict()`. The base class handles timer loops, evaluation, position checks, and OrderRequest publishing.
 
 ### Files to create
-- `src/strategy_<name>.py`
-- `tests/test_strategy_<name>.py`
+- `src/strategies/<name>.py`
+- `tests/test_strategies_<name>.py`
 
 ### Template
 ```python
-# src/strategy_example.py
-from src.event_bus import EventBus
-from src.events import PriceUpdate, OrderRequest
+# src/strategies/momentum.py
+from src.llm_client import LLMClient
+from src.prediction import Prediction, parse_prediction
+from src.strategy import Strategy
 
-class ExampleStrategy:
-    def __init__(self, bus: EventBus) -> None:
-        self._bus = bus
+SYSTEM_PROMPT = "You are a momentum analyst. ..."
 
-    def register(self, bus: EventBus) -> None:
-        bus.subscribe(PriceUpdate, self._on_price)
+class MomentumStrategy(Strategy):
+    def __init__(self, llm_client: LLMClient, **kwargs) -> None:
+        super().__init__(**kwargs)
+        self._llm_client = llm_client
 
-    async def _on_price(self, event: PriceUpdate) -> None:
-        # Your logic here
-        if should_buy(event):
-            await self._bus.publish(OrderRequest(
-                product_id=event.product_id,
-                side="BUY",
-                order_type="MARKET",
-                quote_size=50.0,
-            ))
+    async def _gather_and_predict(self) -> Prediction | None:
+        prices = self._price_buffer.snapshot(self._product_id)
+        if not prices:
+            return None
+        current_price = prices[-1].price
+        prompt = f"Price data: {[p.price for p in prices]}"
+        try:
+            raw = await self._llm_client.complete(system=SYSTEM_PROMPT, user=prompt)
+        except Exception:
+            return None
+        return parse_prediction(raw, current_price)
 ```
 
-### Wire into main.py
+### Register in `src/registry.py`
 ```python
-# After position_tracker.register(bus):
-strategy = ExampleStrategy(bus=bus)
-strategy.register(bus)
+from src.strategies.momentum import MomentumStrategy
 
-# Start market data for the products you want:
-await market_data.start(product_ids=["BTC-USD"])
+STRATEGIES = {
+    ...
+    "momentum": {
+        "class": MomentumStrategy,
+        "description": "Momentum-based prediction strategy",
+    },
+}
 ```
+
+That is all. The new strategy is now available via `--strategy momentum`.
 
 ### Test pattern
 ```python
-async def test_strategy_emits_order():
-    bus = EventBus()
-    strategy = ExampleStrategy(bus=bus)
-    strategy.register(bus)
+async def test_momentum_gather_and_predict():
+    mock_llm = AsyncMock()
+    mock_llm.complete.return_value = '{"target_price": 51000, "timeframe_minutes": 5, "reasoning": "bullish"}'
 
-    orders = []
-    async def capture(event: OrderRequest):
-        orders.append(event)
-    bus.subscribe(OrderRequest, capture)
+    strategy = MomentumStrategy(
+        llm_client=mock_llm,
+        bus=EventBus(),
+        price_buffer=price_buffer,  # pre-loaded with prices
+        settings=Settings(),
+    )
 
-    await bus.publish(PriceUpdate(product_id="BTC-USD", price=50000.0, timestamp="..."))
-    assert len(orders) == 1
+    prediction = await strategy._gather_and_predict()
+    assert prediction is not None
+    assert prediction.target_price == 51000
 ```
+
+---
+
+## Adding an LLM Provider
+
+LLM providers implement the `LLMClient` protocol (a single `complete()` method).
+
+### 1. Create implementation (if needed)
+
+If the provider uses the OpenAI-compatible API, you can reuse `OpenAICompatibleLLMClient` with a different `base_url`. Otherwise, create a new class in `src/llm_client.py`:
+
+```python
+class NewProviderLLMClient:
+    def __init__(self, api_key: str, model: str) -> None:
+        self._api_key = api_key
+        self._model = model
+
+    async def complete(self, system: str, user: str, max_tokens: int = 512) -> str:
+        # Call the provider's API
+        ...
+        return response_text
+```
+
+### 2. Register in `src/registry.py`
+```python
+LLM_PROVIDERS = {
+    ...
+    "newprovider": {
+        "class": NewProviderLLMClient,
+        "default_model": "provider/model-name",
+        "key_env": "NEWPROVIDER_API_KEY",
+        "description": "New Provider API",
+    },
+}
+```
+
+### 3. Add API key to config
+Add `newprovider_api_key: str = ""` to `Settings` in `src/config.py` and to `.env.example`.
+
+The provider is now available via `--llm newprovider`.
 
 ---
 

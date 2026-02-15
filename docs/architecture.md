@@ -10,32 +10,27 @@ Reference: [Design Document](plans/2026-02-14-coinbase-trading-bot-design.md)
     │          │          │          │          │          │          │
 ┌───▼───┐ ┌───▼───┐ ┌───▼───┐ ┌───▼───┐ ┌───▼───┐ ┌───▼─────┐ ┌──▼──────┐
 │Market │ │Order  │ │Risk   │ │Pos.   │ │Kill   │ │Strategy │ │Portfol. │
-│Data   │ │Mgr    │ │Mgr    │ │Track  │ │Switch │ │(select) │ │Tracker  │
+│Data   │ │Mgr    │ │Mgr    │ │Track  │ │Switch │ │  ABC    │ │Tracker  │
 └───┬───┘ └───┬───┘ └───────┘ └───┬───┘ └───────┘ └────┬────┘ └────┬────┘
                                                         │           │
-                                         ┌──────────────┤           │
-                                         │              │           │
-                                  ┌──────▼───────┐ ┌───▼──────────┐│
-                                  │ PriceOnly    │ │ News         ││
-                                  │ Strategy     │ │ Strategy     ││
-                                  └──────┬───────┘ └───┬──────────┘│
-                                         │             │           │
-                                    ┌────▼──┐    ┌────▼──┬───▼───┐│
-                                    │Price  │    │Price  │Predict││
-                                    │Only   │    │Buffer │(any)  ││
-                                    │Predict│    │       │+ News ││
-                                    └───┬───┘    └───────┴───┬───┘│
-    │         │                    │    │             │       │
-    └─────────┴────────────────────┘    │             │       │
-              │                    ┌────▼─────────────▼───┐   │
-     ┌────────▼────────┐           │      LLMClient       │   │
-     │ Coinbase Client  │           │  ┌───────┐ ┌───────┐│   │
-     │ (SDK wrapper)    │           │  │Anthro-│ │OpenAI ││   │
-     └──────────────────┘           │  │pic    │ │Compat ││   │
-                                    │  └───────┘ └───────┘│   │
-     ┌──────────────┐               └─────────────────────┘   │
-     │ Next.js UI   │                                         │
-     │ (read-only)  │──────►┌──────────┐◄─────────────────────┘
+                                  ┌─────────────────────┤           │
+                                  │                     │           │
+                           ┌──────▼───────┐  ┌─────────▼──────┐    │
+                           │ PriceOnly    │  │ News           │    │
+                           │ Strategy     │  │ Strategy       │    │
+                           └──────┬───────┘  └───┬────────────┘    │
+                                  │              │                  │
+    │         │                   │         ┌────▼────┐             │
+    └─────────┴───────────────────┤         │ News    │             │
+              │                   │         │ Service │             │
+     ┌────────▼────────┐     ┌────▼─────────┴─▼───┐                │
+     │ Coinbase Client  │     │     LLMClient      │                │
+     │ (SDK wrapper)    │     │  ┌───────┐ ┌─────┐ │                │
+     └──────────────────┘     │  │Anthro-│ │Open-│ │                │
+                              │  │pic    │ │AI   │ │                │
+     ┌──────────────┐         │  └───────┘ └─────┘ │                │
+     │ Next.js UI   │         └────────────────────┘                │
+     │ (read-only)  │──────►┌──────────┐◄───────────────────────────┘
      └──────────────┘       │  SQLite   │
                             │    DB     │
                             └──────────┘
@@ -55,14 +50,13 @@ Reference: [Design Document](plans/2026-02-14-coinbase-trading-bot-design.md)
 | Database | `db.py` | SQLite schema, connection management | -- | -- |
 | Config | `config.py` | Pydantic settings loaded from `.env` | -- | -- |
 | PriceBuffer | `price_buffer.py` | In-memory rolling buffer of recent prices | `PriceUpdate` | -- |
-| Prediction / Predictor | `prediction.py` | Shared prediction dataclass and protocol for all predictors | -- | -- |
+| Prediction | `prediction.py` | Shared prediction dataclass + `parse_prediction()` helper | -- | -- |
 | LLMClient | `llm_client.py` | Transport-level LLM abstraction (Anthropic + OpenAI-compatible) | -- | -- |
-| ClaudePredictor | `claude_predictor.py` | Predicts BTC targets via LLMClient (price + news context) | -- | -- |
-| KimiPredictor | `kimi_predictor.py` | Predicts BTC targets via LLMClient/OpenRouter (price + news context) | -- | -- |
+| Strategy ABC | `strategy.py` | Shared strategy logic: timer loop, evaluation, position checks | `PriceUpdate` | `OrderRequest` |
+| PriceOnlyStrategy | `strategies/price_only.py` | Price-only prediction: builds prompt from price history, calls LLMClient | `PriceUpdate` | `OrderRequest` |
+| NewsPredictionStrategy | `strategies/news.py` | News + price prediction: builds prompt from prices + headlines, calls LLMClient | `PriceUpdate` | `OrderRequest` |
+| Registry | `registry.py` | `STRATEGIES` + `LLM_PROVIDERS` dicts for CLI-driven wiring | -- | -- |
 | NewsService | `news_service.py` | Fetches crypto news/sentiment via Grok API (xAI) | -- | -- |
-| NewsPredictionStrategy | `strategy_news_prediction.py` | Orchestrates prediction cycle: gathers prices + news, calls any Predictor, emits OrderRequests | `PriceUpdate` | `OrderRequest` |
-| PriceOnlyStrategy | `strategy_price_only.py` | Orchestrates prediction cycle: uses price history only (no news), calls ClaudePriceOnlyPredictor, emits OrderRequests | `PriceUpdate` | `OrderRequest` |
-| ClaudePriceOnlyPredictor | `claude_price_only_predictor.py` | Predicts BTC targets via LLMClient using price history only (no news) | -- | -- |
 | PortfolioTracker | `portfolio_tracker.py` | Periodic snapshots of portfolio value, P&L, and positions | -- | -- |
 | Smoke Test | `scripts/smoke_test.py` | Interactive live plumbing validation — buy/sell/hold lifecycle | -- | -- |
 | Dashboard UI | `ui/` | Next.js TypeScript dashboard — reads SQLite DB read-only, 6 pages | -- | -- |
@@ -234,6 +228,23 @@ OrderRequest arrives
 | Daily loss limit | `MAX_DAILY_LOSS_USD` | $500 | Triggers kill switch |
 | Kill switch | Manual via DB | off | Blocks all new orders |
 
+## ADR: Decoupled Strategies from LLM Providers
+
+**Date:** 2026-02-15
+**Status:** Accepted
+
+**Context:** The original architecture tightly coupled strategies to predictor classes (ClaudePredictor, KimiPredictor, ClaudePriceOnlyPredictor). Each predictor bundled prompt construction, response parsing, and LLM transport. Adding a new LLM provider required a new predictor class per strategy. Adding a new strategy required new predictor classes per provider. This was an M x N scaling problem.
+
+**Decision:** Decouple strategies from LLM providers. Strategies own their prompts and data gathering, calling `LLMClient.complete()` directly for transport. The `Predictor` protocol is removed. A shared `parse_prediction()` helper handles response parsing. A `registry.py` maps strategy and LLM provider names to their classes. CLI args (`--strategy`, `--llm`, `--model`) replace env-var-based selection.
+
+**Consequences:**
+- Adding a new strategy = 1 new file in `src/strategies/` + 1 registry entry
+- Adding a new LLM provider = 1 new `LLMClient` implementation + 1 registry entry
+- Strategies and providers scale independently (M + N, not M x N)
+- Old predictor files deleted: `claude_predictor.py`, `kimi_predictor.py`, `claude_price_only_predictor.py`
+- Old strategy files deleted: `strategy_news_prediction.py`, `strategy_price_only.py`
+- Config simplified: removed `strategy`, `predictor_type`, `prediction_model`, `openrouter_model`, `openrouter_base_url` fields
+
 ## Changelog
 
 - **2026-02-14** -- Initial architecture: EventBus, MarketData, OrderManager, RiskManager, PositionTracker, KillSwitch, Database, Config. 48 tests.
@@ -244,3 +255,4 @@ OrderRequest arrives
 - **2026-02-15** -- Added 4 new DB tables (price_history, predictions, news_history, portfolio_snapshots), PortfolioTracker component, price tick persistence in MarketData, prediction/news logging, and Next.js dashboard UI with 6 pages.
 - **2026-02-15** -- PortfolioTracker now sources total_value_usd from Coinbase account balances via get_accounts() instead of computing from local positions. Removed dead columns position_value_usd and num_open_positions from portfolio_snapshots schema and TS types. 89 tests.
 - **2026-02-15** -- Added LLM client abstraction layer (`LLMClient` protocol with `AnthropicLLMClient` and `OpenAICompatibleLLMClient`), shared `Prediction` dataclass and `Predictor` protocol, `KimiPredictor` for OpenRouter-based predictions, and predictor factory in `main.py`. All predictors now use constructor-injected `LLMClient` instead of raw API keys. Config gains `PREDICTOR_TYPE`, `OPENROUTER_API_KEY`, `OPENROUTER_MODEL`, `OPENROUTER_BASE_URL`. 103 tests.
+- **2026-02-15** -- Decoupled strategies from LLM providers. Replaced predictor classes with Strategy ABC (`src/strategy.py`) + concrete strategies (`src/strategies/`) that call `LLMClient` directly. Added `registry.py` for strategy/provider lookup, CLI args (`--strategy`, `--llm`, `--model`). Removed `Predictor` protocol, added `parse_prediction()` helper. Deleted old files: `claude_predictor.py`, `kimi_predictor.py`, `claude_price_only_predictor.py`, `strategy_news_prediction.py`, `strategy_price_only.py`. Simplified config (removed `strategy`, `predictor_type`, `prediction_model`, `openrouter_model`, `openrouter_base_url`). 96 tests.

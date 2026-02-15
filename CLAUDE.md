@@ -4,7 +4,7 @@ Async event-driven trading bot for Coinbase Advanced Trade. Python 3.12+, asynci
 
 ## Commands
 
-- Run: `python -m src.main`
+- Run: `python -m src.main --strategy price_only --llm anthropic --model claude-opus-4-6`
 - Test: `pytest tests/ -v`
 - Test single: `pytest tests/test_risk_manager.py -v`
 - Install: `.venv/bin/pip install -e ".[dev]"`
@@ -28,7 +28,7 @@ Event-driven graph: independent component nodes communicate via typed events on 
 OrderRequest → RiskManager.check() → CoinbaseClient → OrderFilled → PositionTracker → PositionChanged
 ```
 
-Key files: `src/main.py` (wiring), `src/event_bus.py` (pub/sub), `src/events.py` (7 event types).
+Key files: `src/main.py` (wiring + CLI), `src/event_bus.py` (pub/sub), `src/events.py` (7 event types), `src/strategy.py` (Strategy ABC), `src/registry.py` (strategy + LLM provider registries).
 
 ## Conventions
 

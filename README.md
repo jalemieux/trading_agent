@@ -14,10 +14,11 @@ Built with Python 3.12+, asyncio, and the official Coinbase SDK.
 - **Kill switch** -- emergency halt persisted across restarts
 - **Event-driven architecture** -- all components communicate via async pub/sub
 - **SQLite persistence** for positions, orders, and daily summaries
-- **Multi-model price prediction** — swappable LLM backend: Claude (Anthropic) or Kimi (OpenRouter), configurable via env var
+- **Decoupled strategy/LLM architecture** — strategies own prompts and data gathering; LLM clients are pure transport. Mix any strategy with any LLM provider via CLI flags
+- **CLI-driven configuration** — `--strategy price_only|news`, `--llm anthropic|openrouter`, `--model <model-id>`
 - **Two strategy modes** — `price_only` (technical analysis only) or `news` (price + news sentiment)
 - **Real-time crypto news** — fetches news/sentiment via Grok API (xAI) (news strategy)
-- **Configurable trading** — adjustable prediction interval, trade threshold, size, strategy, and predictor model
+- **Configurable trading** — adjustable prediction interval, trade threshold, size, and trading pair
 - **Trading dashboard** — Next.js web UI with portfolio equity curve, price charts, positions/orders tables, and prediction log
 
 ## Setup
@@ -61,22 +62,32 @@ DB_PATH=trading_bot.db
 | `ANTHROPIC_API_KEY` | Anthropic API key for Claude predictions | `""` |
 | `GROK_API_KEY` | xAI API key for Grok news service | `""` |
 | `PREDICTION_INTERVAL_MINUTES` | Minutes between prediction cycles | `5` |
-| `PREDICTION_MODEL` | Claude model for predictions | `claude-opus-4-6` |
 | `GROK_MODEL` | Grok model for news | `grok-3-mini-fast` |
 | `TRADE_THRESHOLD_PCT` | Min % price difference to trigger trade | `1.0` |
 | `TRADE_SIZE_USD` | USD amount per trade | `50.0` |
 | `PRODUCT_ID` | Trading pair to monitor and trade | `BTC-USD` |
-| `STRATEGY` | Strategy mode: `price_only` or `news` | `price_only` |
-| `PREDICTOR_TYPE` | Predictor backend: `claude` or `kimi` | `claude` |
-| `OPENROUTER_API_KEY` | OpenRouter API key (for Kimi predictor) | `""` |
-| `OPENROUTER_MODEL` | OpenRouter model ID | `moonshotai/kimi-k2` |
-| `OPENROUTER_BASE_URL` | OpenRouter API base URL | `https://openrouter.ai/api/v1` |
+| `OPENROUTER_API_KEY` | OpenRouter API key (when using `--llm openrouter`) | `""` |
+
+Strategy, LLM provider, and model are now selected via CLI args (see Run section below).
 
 ### 3. Run
 
 ```bash
+# Default: price_only strategy with Anthropic Claude
 python -m src.main
+
+# Explicit strategy + LLM provider + model
+python -m src.main --strategy news --llm anthropic --model claude-opus-4-6
+
+# Use OpenRouter with any compatible model
+python -m src.main --strategy price_only --llm openrouter --model moonshotai/kimi-k2
 ```
+
+| CLI Flag | Options | Default | Description |
+|----------|---------|---------|-------------|
+| `--strategy` | `price_only`, `news` | `price_only` | Trading strategy |
+| `--llm` | `anthropic`, `openrouter` | `anthropic` | LLM provider |
+| `--model` | any model ID | depends on `--llm` | LLM model ID |
 
 The bot initializes all components, connects to the Coinbase WebSocket for price data, and starts the selected prediction strategy. Shut down with `Ctrl+C` (graceful SIGINT/SIGTERM handling).
 
@@ -143,7 +154,7 @@ All components are independent nodes connected through an async `EventBus`. See 
     │          │          │          │          │          │
 ┌───▼───┐ ┌───▼───┐ ┌───▼───┐ ┌───▼───┐ ┌───▼───┐ ┌───▼─────┐
 │Market │ │Order  │ │Risk   │ │Pos.   │ │Kill   │ │Strategy │
-│Data   │ │Mgr    │ │Mgr    │ │Track  │ │Switch │ │(select) │
+│Data   │ │Mgr    │ │Mgr    │ │Track  │ │Switch │ │  ABC    │
 └───┬───┘ └───┬───┘ └───────┘ └───┬───┘ └───────┘ └────┬────┘
     │         │                    │          ┌──────────┤
     │         │                    │          │          │
@@ -185,13 +196,13 @@ coinbase_trading_bot/
 │   ├── kill_switch.py          # Emergency halt
 │   ├── price_buffer.py          # In-memory price history buffer
 │   ├── news_service.py          # Grok API news/sentiment client
-│   ├── prediction.py            # Shared Prediction dataclass + Predictor protocol
+│   ├── prediction.py            # Shared Prediction dataclass + parse_prediction() helper
 │   ├── llm_client.py            # LLMClient protocol (Anthropic + OpenAI-compatible)
-│   ├── claude_predictor.py      # Claude predictions via LLMClient (news strategy)
-│   ├── kimi_predictor.py        # Kimi/OpenRouter predictions via LLMClient (news strategy)
-│   ├── claude_price_only_predictor.py  # Price-only predictions via LLMClient
-│   ├── strategy_news_prediction.py    # News + price prediction strategy
-│   ├── strategy_price_only.py         # Price-only prediction strategy
+│   ├── strategy.py              # Strategy ABC (shared logic: timer, evaluation, position checks)
+│   ├── registry.py              # STRATEGIES + LLM_PROVIDERS registries
+│   ├── strategies/
+│   │   ├── price_only.py        # PriceOnlyStrategy — price history only
+│   │   └── news.py              # NewsPredictionStrategy — price + news sentiment
 │   ├── portfolio_tracker.py    # Periodic portfolio snapshots
 │   └── db.py                   # SQLite setup and migrations
 ├── ui/                         # Next.js dashboard (TypeScript + Tailwind)
