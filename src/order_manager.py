@@ -10,6 +10,13 @@ from src.risk_manager import RiskManager
 logger = logging.getLogger(__name__)
 
 
+def _get(obj, key, default=None):
+    """Get a value from a dict or object attribute."""
+    if isinstance(obj, dict):
+        return obj.get(key, default)
+    return getattr(obj, key, default)
+
+
 class OrderManager:
     def __init__(
         self,
@@ -45,21 +52,22 @@ class OrderManager:
             await self._bus.publish(OrderFailed(order_id=order.order_id, reason=str(e)))
             return
 
-        if not result.get("success"):
-            error = result.get("error_response", {})
-            reason = str(error.get("error", "Unknown error"))
+        if not _get(result, "success"):
+            error = _get(result, "error_response") or {}
+            reason = str(_get(error, "error", "Unknown error"))
             await self._persist_order(order, now, status="FAILED")
             await self._bus.publish(OrderFailed(order_id=order.order_id, reason=reason))
             return
 
-        cb_order_id = result["success_response"]["order_id"]
+        success_resp = _get(result, "success_response") or {}
+        cb_order_id = _get(success_resp, "order_id", "")
 
         # Poll for fill details
         order_details = self._coinbase.get_order(cb_order_id)
-        details = order_details.get("order", {})
-        filled_price = float(details.get("average_filled_price", 0))
-        filled_qty = float(details.get("filled_size", 0))
-        fee = float(details.get("total_fees", 0))
+        details = _get(order_details, "order")
+        filled_price = float(_get(details, "average_filled_price", 0) if details else 0)
+        filled_qty = float(_get(details, "filled_size", 0) if details else 0)
+        fee = float(_get(details, "total_fees", 0) if details else 0)
 
         # Persist
         await self._persist_order(
