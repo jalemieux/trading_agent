@@ -30,6 +30,10 @@ coinbase_client.py ← no internal deps (wraps coinbase SDK)
 order_manager.py   ← coinbase_client, db, event_bus, events, risk_manager
 position_tracker.py← db, event_bus, events
 market_data.py     ← event_bus, events (wraps coinbase SDK)
+price_buffer.py    ← events
+news_service.py    ← no internal deps (wraps openai SDK)
+claude_predictor.py← events (wraps anthropic SDK)
+strategy_claude_prediction.py ← price_buffer, news_service, claude_predictor, config, db, event_bus, events
 main.py            ← all of the above
 ```
 
@@ -40,9 +44,13 @@ EventBus subscriptions (registered in main.py):
 
 OrderRequest   → OrderManager._handle_order_request
 OrderFilled    → PositionTracker._handle_order_filled
+PriceUpdate    → ClaudePredictionStrategy._on_price
+
+Published by:
+OrderRequest      — published by ClaudePredictionStrategy (BUY/SELL decisions)
+PriceUpdate       — published by MarketData
 
 Not subscribed (published only):
-PriceUpdate       — published by MarketData, no consumer yet (strategy layer)
 OrderFailed       — published by OrderManager, no consumer yet
 RiskViolation     — published by RiskManager, no consumer yet
 PositionChanged   — published by PositionTracker, no consumer yet
@@ -64,7 +72,11 @@ src/
 ├── coinbase_client.py:53    CoinbaseClient — SDK wrapper
 ├── order_manager.py:138     OrderManager — order lifecycle
 ├── position_tracker.py:175  PositionTracker — P&L tracking
-└── market_data.py:63        MarketData — WebSocket ticker
+├── market_data.py:63        MarketData — WebSocket ticker
+├── price_buffer.py:25        PriceBuffer — in-memory ring buffer per product
+├── news_service.py:39        NewsService — Grok xAI news/sentiment client
+├── claude_predictor.py:84    ClaudePredictor — Claude API predictions
+└── strategy_claude_prediction.py:152  ClaudePredictionStrategy — timer-based AI strategy
 
 tests/
 ├── test_event_bus.py        5 tests
@@ -76,6 +88,11 @@ tests/
 ├── test_order_manager.py    5 tests
 ├── test_position_tracker.py 4 tests
 ├── test_market_data.py      2 tests
-└── test_integration.py      2 tests
-                             ── 48 total
+├── test_integration.py      2 tests
+├── test_price_buffer.py     5 tests
+├── test_news_service.py     2 tests
+├── test_claude_predictor.py 4 tests
+├── test_config_prediction.py 2 tests
+└── test_strategy_claude_prediction.py 8 tests
+                             ── 69 total
 ```

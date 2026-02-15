@@ -13,6 +13,9 @@ Built with Python 3.12+, asyncio, and the official Coinbase SDK.
 - **Kill switch** -- emergency halt persisted across restarts
 - **Event-driven architecture** -- all components communicate via async pub/sub
 - **SQLite persistence** for positions, orders, and daily summaries
+- **Claude-powered price prediction** — uses Claude Opus 4.6 to predict BTC price targets
+- **Real-time crypto news** — fetches news/sentiment via Grok API (xAI)
+- **Configurable trading** — adjustable prediction interval, trade threshold, and size
 
 ## Setup
 
@@ -51,6 +54,13 @@ DB_PATH=trading_bot.db
 | `MAX_ORDER_SIZE_USD` | Max USD value per order | `100` |
 | `MAX_DAILY_LOSS_USD` | Daily loss limit before kill switch activates | `500` |
 | `DB_PATH` | SQLite database file path | `trading_bot.db` |
+| `ANTHROPIC_API_KEY` | Anthropic API key for Claude predictions | `""` |
+| `GROK_API_KEY` | xAI API key for Grok news service | `""` |
+| `PREDICTION_INTERVAL_MINUTES` | Minutes between prediction cycles | `5` |
+| `PREDICTION_MODEL` | Claude model for predictions | `claude-opus-4-6` |
+| `GROK_MODEL` | Grok model for news | `grok-3-mini-fast` |
+| `TRADE_THRESHOLD_PCT` | Min % price difference to trigger trade | `1.0` |
+| `TRADE_SIZE_USD` | USD amount per trade | `50.0` |
 
 ### 3. Run
 
@@ -63,7 +73,7 @@ The bot initializes all components and waits for a strategy to emit `OrderReques
 ## Running Tests
 
 ```bash
-# All 48 tests
+# All 69 tests
 pytest
 
 # With coverage
@@ -104,8 +114,8 @@ All components are independent nodes connected through an async `EventBus`. See 
   ┌──────────┬──────────┬──────────┬──────────┬──────────┐
   │          │          │          │          │          │
 ┌─▼──┐  ┌───▼───┐  ┌───▼───┐  ┌───▼───┐  ┌───▼───┐  ┌─▼───────┐
-│Mkt │  │Order  │  │Risk   │  │Pos.   │  │Kill   │  │Strategy │
-│Data│  │Mgr    │  │Mgr    │  │Track  │  │Switch │  │(future) │
+│Mkt │  │Order  │  │Risk   │  │Pos.   │  │Kill   │  │Claude   │
+│Data│  │Mgr    │  │Mgr    │  │Track  │  │Switch │  │Predict  │
 └─┬──┘  └───┬───┘  └───────┘  └───┬───┘  └───────┘  └─────────┘
   │         │                      │
   └─────────┴──────────────────────┘
@@ -141,8 +151,12 @@ coinbase_trading_bot/
 │   ├── risk_manager.py         # Limit validation pipeline
 │   ├── position_tracker.py     # Position + P&L management
 │   ├── kill_switch.py          # Emergency halt
+│   ├── price_buffer.py          # In-memory price history buffer
+│   ├── news_service.py          # Grok API news/sentiment client
+│   ├── claude_predictor.py      # Claude API price predictions
+│   ├── strategy_claude_prediction.py  # AI prediction strategy
 │   └── db.py                   # SQLite setup and migrations
-├── tests/                      # 48 tests (unit + integration)
+├── tests/                      # 69 tests (unit + integration)
 ├── scripts/
 │   └── smoke_test.py           # Interactive live plumbing validation
 ├── docs/

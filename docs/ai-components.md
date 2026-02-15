@@ -268,3 +268,112 @@ Shutdown:
 - await db.close()
 
 Note: MarketData.start() is NOT called in main(). Products must be subscribed explicitly (strategy layer responsibility).
+
+---
+
+## PriceBuffer — `src/price_buffer.py`
+
+```
+class PriceBuffer:
+    __init__(max_size: int = 50)
+    add(update: PriceUpdate) → None
+    snapshot(product_id: str) → list[PriceUpdate]
+    latest(product_id: str) → PriceUpdate | None
+```
+
+Internal state:
+- `_max_size: int`
+- `_buffers: dict[str, deque[PriceUpdate]]`
+
+Behavior:
+- Ring buffer per product_id, FIFO eviction at max_size
+- snapshot() returns a list copy of the deque for that product
+- latest() returns the most recent PriceUpdate or None if empty
+- add() appends to the deque, evicting oldest if at capacity
+
+Dependencies: events
+
+---
+
+## NewsService — `src/news_service.py`
+
+```
+class NewsService:
+    __init__(api_key: str, model: str = "grok-3-mini-fast")
+    fetch_headlines(product_id: str) → list[str]  # async
+```
+
+Internal state:
+- `_model: str`
+- `_client: AsyncOpenAI`
+
+Behavior:
+- Calls Grok xAI API (via OpenAI-compatible SDK) for crypto news headlines
+- Returns list of headline strings relevant to the given product
+- Returns empty list on any error (network, API, parsing)
+
+Dependencies: openai SDK
+
+---
+
+## ClaudePredictor — `src/claude_predictor.py`
+
+```
+@dataclass
+class Prediction:
+    target_price: float
+    timeframe_minutes: int
+    reasoning: str
+    current_price: float
+    timestamp: str
+
+class ClaudePredictor:
+    __init__(api_key: str, model: str = "claude-opus-4-6")
+    predict(prices: list[PriceUpdate], headlines: list[str]) → Prediction | None  # async
+```
+
+Internal state:
+- `_model: str`
+- `_client: AsyncAnthropic`
+
+Behavior:
+- Sends price history + headlines to Claude API as a structured prompt
+- Parses JSON response into a Prediction dataclass
+- Returns None on any failure (API error, malformed response, parsing error)
+
+Dependencies: anthropic SDK, events
+
+---
+
+## ClaudePredictionStrategy — `src/strategy_claude_prediction.py`
+
+```
+class ClaudePredictionStrategy:
+    __init__(bus, price_buffer, news_service, predictor, settings, product_id="BTC-USD", db=None)
+    register(bus) → None
+    start() → None  # async, starts timer loop
+    stop() → None   # async, cancels timer
+```
+
+Subscribes to: PriceUpdate
+Publishes: OrderRequest
+
+Internal state:
+- `_bus: EventBus`
+- `_price_buffer: PriceBuffer`
+- `_news_service: NewsService`
+- `_predictor: ClaudePredictor`
+- `_settings: Settings`
+- `_product_id: str`
+- `_db: Database | None`
+- `_task: asyncio.Task | None`
+
+Behavior:
+- register() subscribes to PriceUpdate, delegates to _on_price which feeds the PriceBuffer
+- start() launches an asyncio task that runs a prediction loop on a timer
+- Timer fires every `prediction_interval_minutes` minutes
+- Each cycle: snapshot prices → fetch headlines → predict → evaluate prediction vs current price
+- If predicted price differs from current by more than `trade_threshold_pct`, emits OrderRequest (BUY if higher, SELL if lower)
+- stop() cancels the timer task
+
+Dependencies: PriceBuffer, NewsService, ClaudePredictor, EventBus, Database, Settings
