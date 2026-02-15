@@ -1,0 +1,607 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Coinbase Trading Bot</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+    :root {
+      --zinc-100: #f4f4f5;
+      --zinc-300: #d4d4d8;
+      --zinc-400: #a1a1aa;
+      --zinc-500: #71717a;
+      --zinc-700: #3f3f46;
+      --zinc-800: #27272a;
+      --zinc-900: #18181b;
+      --zinc-950: #09090b;
+      --green-400: #4ade80;
+      --green-950: #052e16;
+      --red-400: #f87171;
+      --red-950: #450a0a;
+    }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: var(--zinc-950);
+      color: var(--zinc-100);
+      line-height: 1.6;
+      font-size: 15px;
+    }
+
+    /* Nav */
+    nav {
+      border-bottom: 1px solid var(--zinc-800);
+      background: var(--zinc-950);
+      padding: 12px 24px;
+      display: flex;
+      align-items: center;
+      gap: 32px;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+    nav .brand {
+      font-size: 18px;
+      font-weight: 600;
+      color: var(--zinc-100);
+      text-decoration: none;
+    }
+    nav a {
+      color: var(--zinc-400);
+      text-decoration: none;
+      font-size: 14px;
+      padding: 4px 12px;
+      border-radius: 6px;
+      transition: color 0.15s, background 0.15s;
+    }
+    nav a:hover { color: var(--zinc-100); background: var(--zinc-900); }
+
+    /* Layout */
+    .container {
+      max-width: 960px;
+      margin: 0 auto;
+      padding: 48px 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 32px;
+    }
+
+    /* Hero */
+    .hero { padding-bottom: 8px; }
+    .hero h1 {
+      font-size: 32px;
+      font-weight: 700;
+      margin-bottom: 4px;
+    }
+    .hero .subtitle {
+      font-size: 16px;
+      color: var(--zinc-400);
+      font-weight: 500;
+      margin-bottom: 16px;
+    }
+    .hero p {
+      color: var(--zinc-300);
+      max-width: 720px;
+    }
+
+    /* Sections */
+    section { display: flex; flex-direction: column; gap: 16px; }
+    h2 {
+      font-size: 20px;
+      font-weight: 600;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--zinc-800);
+    }
+
+    /* Cards */
+    .card {
+      border: 1px solid var(--zinc-800);
+      background: var(--zinc-900);
+      border-radius: 8px;
+      padding: 20px;
+    }
+    .card h3 {
+      font-size: 15px;
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+    .card p, .card li {
+      color: var(--zinc-300);
+      font-size: 14px;
+    }
+
+    /* Stat cards grid */
+    .stat-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 16px;
+    }
+    @media (max-width: 768px) {
+      .stat-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+    .stat-card {
+      border: 1px solid var(--zinc-800);
+      background: var(--zinc-900);
+      border-radius: 8px;
+      padding: 16px;
+    }
+    .stat-card .label {
+      font-size: 13px;
+      color: var(--zinc-400);
+      margin-bottom: 4px;
+    }
+    .stat-card .value {
+      font-size: 22px;
+      font-weight: 600;
+    }
+    .stat-card .sub {
+      font-size: 12px;
+      color: var(--zinc-500);
+      margin-top: 2px;
+    }
+
+    /* Architecture diagram */
+    .diagram {
+      border: 1px solid var(--zinc-800);
+      background: var(--zinc-900);
+      border-radius: 8px;
+      padding: 32px;
+      display: flex;
+      justify-content: center;
+    }
+    .diagram svg { max-width: 100%; }
+    .diagram text { font-family: 'Inter', sans-serif; }
+
+    /* Table */
+    .table-wrap {
+      overflow-x: auto;
+      border: 1px solid var(--zinc-800);
+      border-radius: 8px;
+    }
+    table { width: 100%; border-collapse: collapse; }
+    thead { background: var(--zinc-900); }
+    th {
+      text-align: left;
+      padding: 10px 16px;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--zinc-400);
+      border-bottom: 1px solid var(--zinc-800);
+    }
+    td {
+      padding: 10px 16px;
+      font-size: 14px;
+      color: var(--zinc-300);
+      border-bottom: 1px solid var(--zinc-800);
+    }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: rgba(24, 24, 27, 0.5); }
+    td strong { color: var(--zinc-100); }
+
+    /* List cards */
+    .list-card ul {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .list-card li {
+      padding-left: 12px;
+      border-left: 2px solid var(--zinc-800);
+    }
+    .list-card li strong { color: var(--zinc-100); }
+
+    /* Pipeline */
+    .pipeline {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      counter-reset: step;
+    }
+    .pipeline-step {
+      border: 1px solid var(--zinc-800);
+      background: var(--zinc-900);
+      border-radius: 8px;
+      padding: 14px 16px;
+      display: flex;
+      align-items: baseline;
+      gap: 12px;
+    }
+    .pipeline-step::before {
+      counter-increment: step;
+      content: counter(step);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      background: var(--zinc-800);
+      color: var(--zinc-400);
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .pipeline-step strong { color: var(--zinc-100); }
+    .pipeline-step span { color: var(--zinc-300); font-size: 14px; }
+
+    /* Code blocks */
+    pre {
+      background: var(--zinc-900);
+      border: 1px solid var(--zinc-800);
+      border-radius: 8px;
+      padding: 16px;
+      overflow-x: auto;
+      font-size: 13px;
+      line-height: 1.7;
+    }
+    code {
+      font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+      color: var(--zinc-300);
+    }
+    .comment { color: var(--zinc-500); }
+    .cmd { color: var(--green-400); }
+
+    /* Inline code */
+    p code, li code, td code {
+      background: var(--zinc-800);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 13px;
+    }
+
+    /* Badges */
+    .badge {
+      display: inline-block;
+      font-size: 12px;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-weight: 500;
+    }
+    .badge-green { background: var(--green-950); color: var(--green-400); }
+    .badge-red { background: var(--red-950); color: var(--red-400); }
+
+    /* Prereq list */
+    .prereq-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .prereq-list li {
+      font-size: 14px;
+      color: var(--zinc-300);
+      padding: 8px 12px;
+      border: 1px solid var(--zinc-800);
+      border-radius: 6px;
+      background: var(--zinc-900);
+    }
+    .prereq-list li strong { color: var(--zinc-100); }
+
+    /* Divider */
+    hr {
+      border: none;
+      border-top: 1px solid var(--zinc-800);
+      margin: 8px 0;
+    }
+
+    /* Alert */
+    .alert {
+      border: 1px solid #991b1b;
+      background: var(--red-950);
+      border-radius: 8px;
+      padding: 16px;
+      color: #fca5a5;
+      font-size: 14px;
+    }
+    .alert strong { color: var(--red-400); }
+
+    /* Footer */
+    footer {
+      text-align: center;
+      color: var(--zinc-500);
+      font-size: 12px;
+      padding: 24px 0;
+      border-top: 1px solid var(--zinc-800);
+    }
+  </style>
+</head>
+<body>
+
+  <nav>
+    <span class="brand">Coinbase Trading Bot</span>
+    <a href="#architecture">Architecture</a>
+    <a href="#intelligence">Intelligence</a>
+    <a href="#risk">Risk</a>
+    <a href="#setup">Setup</a>
+  </nav>
+
+  <div class="container">
+
+    <!-- Hero -->
+    <div class="hero">
+      <h1>Coinbase Trading Bot</h1>
+      <div class="subtitle">Production-Grade Infrastructure for Agentic Quantitative Trading</div>
+      <p>An asynchronous, event-driven framework designed to bridge the gap between Large Language Model reasoning and professional market execution. It provides hardened infrastructure&mdash;WebSocket management, order lifecycle persistence, and multi-stage risk validation&mdash;allowing developers to focus entirely on the strategy layer.</p>
+    </div>
+
+    <hr>
+
+    <!-- Architecture -->
+    <section id="architecture">
+      <h2>System Architecture</h2>
+      <p style="color: var(--zinc-300); font-size: 14px;">Built on an Async Event Bus architecture. All components are decoupled nodes that communicate via typed, immutable events, ensuring non-blocking execution and high throughput.</p>
+
+      <div class="diagram">
+        <svg width="740" height="740" viewBox="0 0 740 740">
+          <defs>
+            <marker id="arrow-gray" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+              <path d="M 0 0 L 10 5 L 0 10 z" fill="#71717a"/>
+            </marker>
+            <marker id="arrow-green" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+              <path d="M 0 0 L 10 5 L 0 10 z" fill="#4ade80"/>
+            </marker>
+            <marker id="arrow-red" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+              <path d="M 0 0 L 10 5 L 0 10 z" fill="#f87171"/>
+            </marker>
+          </defs>
+
+          <!-- ===== ROW 0: External source ===== -->
+          <rect x="260" y="10" width="220" height="40" rx="6" fill="#18181b" stroke="#3f3f46" stroke-dasharray="6 3"/>
+          <text x="370" y="35" text-anchor="middle" fill="#71717a" font-size="13" font-weight="500">Coinbase WebSocket</text>
+
+          <!-- Arrow down -->
+          <line x1="370" y1="50" x2="370" y2="76" stroke="#71717a" stroke-width="1.5" marker-end="url(#arrow-gray)"/>
+
+          <!-- ===== ROW 1: MarketData ===== -->
+          <rect x="260" y="80" width="220" height="44" rx="6" fill="#18181b" stroke="#3f3f46"/>
+          <text x="370" y="107" text-anchor="middle" fill="#f4f4f5" font-size="14" font-weight="500">MarketData</text>
+
+          <!-- Event label -->
+          <line x1="370" y1="124" x2="370" y2="156" stroke="#71717a" stroke-width="1.5" marker-end="url(#arrow-gray)"/>
+          <rect x="306" y="133" width="128" height="20" rx="3" fill="#09090b"/>
+          <text x="370" y="147" text-anchor="middle" fill="#a1a1aa" font-size="11" font-style="italic">PriceUpdate</text>
+
+          <!-- ===== ROW 2: Strategy + helpers ===== -->
+          <rect x="230" y="160" width="280" height="56" rx="6" fill="#18181b" stroke="#3f3f46"/>
+          <text x="370" y="184" text-anchor="middle" fill="#f4f4f5" font-size="14" font-weight="500">Strategy</text>
+          <text x="370" y="204" text-anchor="middle" fill="#71717a" font-size="11">PriceBuffer  +  Claude AI  +  News</text>
+
+          <!-- Event label -->
+          <line x1="370" y1="216" x2="370" y2="248" stroke="#71717a" stroke-width="1.5" marker-end="url(#arrow-gray)"/>
+          <rect x="306" y="225" width="128" height="20" rx="3" fill="#09090b"/>
+          <text x="370" y="239" text-anchor="middle" fill="#a1a1aa" font-size="11" font-style="italic">OrderRequest</text>
+
+          <!-- ===== ROW 3: OrderManager ===== -->
+          <rect x="260" y="252" width="220" height="44" rx="6" fill="#18181b" stroke="#3f3f46"/>
+          <text x="370" y="279" text-anchor="middle" fill="#f4f4f5" font-size="14" font-weight="500">OrderManager</text>
+
+          <!-- Arrow to RiskManager (calls) -->
+          <line x1="370" y1="296" x2="370" y2="328" stroke="#71717a" stroke-width="1.5" marker-end="url(#arrow-gray)"/>
+          <rect x="330" y="305" width="80" height="20" rx="3" fill="#09090b"/>
+          <text x="370" y="319" text-anchor="middle" fill="#71717a" font-size="10">calls check()</text>
+
+          <!-- ===== ROW 4: RiskManager ===== -->
+          <rect x="260" y="332" width="220" height="44" rx="6" fill="#18181b" stroke="#3f3f46" stroke-width="2"/>
+          <text x="370" y="359" text-anchor="middle" fill="#f4f4f5" font-size="14" font-weight="600">RiskManager</text>
+          <!-- sub-labels for 3 checks -->
+          <text x="370" y="371" text-anchor="middle" fill="#71717a" font-size="9">Kill Switch  ·  Order Size  ·  Daily Drawdown</text>
+
+          <!-- ===== ROW 5: Branch - Abort left / Validated right ===== -->
+          <!-- Abort arrow (left) -->
+          <line x1="300" y1="376" x2="190" y2="420" stroke="#f87171" stroke-width="1.5" marker-end="url(#arrow-red)"/>
+          <text x="218" y="398" fill="#f87171" font-size="11" font-weight="500">Abort</text>
+
+          <!-- Validated arrow (right) -->
+          <line x1="440" y1="376" x2="530" y2="420" stroke="#4ade80" stroke-width="1.5" marker-end="url(#arrow-green)"/>
+          <text x="495" y="398" fill="#4ade80" font-size="11" font-weight="500">Validated</text>
+
+          <!-- Kill Switch / RiskViolation (left) -->
+          <rect x="60" y="424" width="250" height="44" rx="6" fill="#450a0a" stroke="#991b1b"/>
+          <text x="185" y="445" text-anchor="middle" fill="#f87171" font-size="13" font-weight="500">RiskViolation</text>
+          <text x="185" y="461" text-anchor="middle" fill="#f87171" font-size="11">KillSwitchActivated</text>
+
+          <!-- CoinbaseClient (right) -->
+          <rect x="430" y="424" width="220" height="44" rx="6" fill="#052e16" stroke="#166534"/>
+          <text x="540" y="451" text-anchor="middle" fill="#4ade80" font-size="14" font-weight="500">Coinbase API</text>
+
+          <!-- ===== ROW 6: Branch from Coinbase - Filled / Failed ===== -->
+          <!-- OrderFilled arrow (right side, continues down) -->
+          <line x1="500" y1="468" x2="440" y2="512" stroke="#4ade80" stroke-width="1.5" marker-end="url(#arrow-green)"/>
+          <rect x="410" y="481" width="110" height="20" rx="3" fill="#09090b"/>
+          <text x="465" y="495" text-anchor="middle" fill="#4ade80" font-size="11" font-style="italic">OrderFilled</text>
+
+          <!-- OrderFailed arrow (far right, dead end) -->
+          <line x1="590" y1="468" x2="640" y2="512" stroke="#f87171" stroke-width="1.5" marker-end="url(#arrow-red)"/>
+          <rect x="600" y="516" width="120" height="36" rx="6" fill="#450a0a" stroke="#991b1b"/>
+          <text x="660" y="539" text-anchor="middle" fill="#f87171" font-size="12" font-weight="500">OrderFailed</text>
+
+          <!-- ===== ROW 7: PositionTracker ===== -->
+          <rect x="310" y="516" width="220" height="44" rx="6" fill="#18181b" stroke="#3f3f46"/>
+          <text x="420" y="543" text-anchor="middle" fill="#f4f4f5" font-size="14" font-weight="500">PositionTracker</text>
+          <text x="420" y="556" text-anchor="middle" fill="#71717a" font-size="9">P&amp;L  ·  daily_summary</text>
+
+          <!-- Event label -->
+          <line x1="420" y1="560" x2="420" y2="592" stroke="#71717a" stroke-width="1.5" marker-end="url(#arrow-gray)"/>
+          <rect x="356" y="569" width="128" height="20" rx="3" fill="#09090b"/>
+          <text x="420" y="583" text-anchor="middle" fill="#a1a1aa" font-size="11" font-style="italic">PositionChanged</text>
+
+          <!-- ===== ROW 8: Persistence (SQLite) ===== -->
+          <rect x="240" y="596" width="360" height="36" rx="6" fill="#18181b" stroke="#3f3f46" stroke-dasharray="6 3"/>
+          <text x="420" y="619" text-anchor="middle" fill="#71717a" font-size="13" font-weight="500">SQLite  ·  orders  ·  positions  ·  daily_summary  ·  predictions</text>
+
+          <!-- ===== Vertical spine: dashed guide line behind everything ===== -->
+
+          <!-- ===== Legend ===== -->
+          <rect x="20" y="660" width="700" height="60" rx="6" fill="#18181b" stroke="#27272a"/>
+          <text x="40" y="685" fill="#71717a" font-size="11" font-weight="600">LEGEND</text>
+          <!-- Event -->
+          <line x1="110" y1="680" x2="140" y2="680" stroke="#71717a" stroke-width="1.5" marker-end="url(#arrow-gray)"/>
+          <text x="148" y="684" fill="#a1a1aa" font-size="11">Event</text>
+          <!-- Validated -->
+          <line x1="210" y1="680" x2="240" y2="680" stroke="#4ade80" stroke-width="1.5" marker-end="url(#arrow-green)"/>
+          <text x="248" y="684" fill="#4ade80" font-size="11">Validated</text>
+          <!-- Rejected -->
+          <line x1="330" y1="680" x2="360" y2="680" stroke="#f87171" stroke-width="1.5" marker-end="url(#arrow-red)"/>
+          <text x="368" y="684" fill="#f87171" font-size="11">Rejected</text>
+          <!-- External -->
+          <rect x="440" y="670" width="60" height="20" rx="4" fill="none" stroke="#3f3f46" stroke-dasharray="6 3"/>
+          <text x="516" y="684" fill="#71717a" font-size="11">External</text>
+          <!-- 7 event types -->
+          <text x="40" y="706" fill="#71717a" font-size="10">7 event types: PriceUpdate · OrderRequest · OrderFilled · OrderFailed · RiskViolation · PositionChanged · KillSwitchActivated</text>
+        </svg>
+      </div>
+
+      <h3 style="font-size: 16px; font-weight: 600;">Core Components</h3>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Component</th>
+              <th>Responsibility</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Market Data</strong></td>
+              <td>Real-time Coinbase WebSocket (Ticker Channel) persistence.</td>
+            </tr>
+            <tr>
+              <td><strong>Order Manager</strong></td>
+              <td>Full lifecycle tracking with fee accounting and 5-stage fill verification.</td>
+            </tr>
+            <tr>
+              <td><strong>Position Tracker</strong></td>
+              <td>Real-time realized P&amp;L and daily summaries via SQLite.</td>
+            </tr>
+            <tr>
+              <td><strong>Strategy Select</strong></td>
+              <td>Dynamic switching between <code>PriceOnly</code> and <code>News-Aware</code> (Grok + Claude) modes.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <hr>
+
+    <!-- Intelligence Layer -->
+    <section id="intelligence">
+      <h2>Intelligence Layer</h2>
+      <p style="color: var(--zinc-300); font-size: 14px;">The system treats trading as a multi-modal cognitive process rather than a set of rigid indicators.</p>
+
+      <div class="card list-card">
+        <ul>
+          <li><strong>Claude Opus 4.6 Integration</strong> &mdash; High-context price target forecasting using structured JSON outputs.</li>
+          <li><strong>Grok xAI News Service</strong> &mdash; Ingests real-time crypto news and sentiment to inform high-conviction trades.</li>
+          <li><strong>Vectorized History</strong> &mdash; Maintains an in-memory <code>PriceBuffer</code> for technical analysis snapshots.</li>
+        </ul>
+      </div>
+    </section>
+
+    <hr>
+
+    <!-- Risk Management -->
+    <section id="risk">
+      <h2>Risk Management &amp; Transparency</h2>
+      <p style="color: var(--zinc-300); font-size: 14px;">Defense is the only way to survive. A three-stage validation pipeline functions as a persistent circuit breaker.</p>
+
+      <div class="pipeline">
+        <div class="pipeline-step">
+          <div>
+            <strong>Kill Switch</strong><br>
+            <span>An emergency halt that persists across system restarts via SQLite.</span>
+          </div>
+        </div>
+        <div class="pipeline-step">
+          <div>
+            <strong>Order Guardrails</strong><br>
+            <span>Strict <code>MAX_ORDER_SIZE_USD</code> limits per transaction.</span>
+          </div>
+        </div>
+        <div class="pipeline-step">
+          <div>
+            <strong>Daily Drawdown Protection</strong><br>
+            <span>Automatic halt if cumulative losses exceed <code>MAX_DAILY_LOSS_USD</code>.</span>
+          </div>
+        </div>
+      </div>
+
+      <h3 style="font-size: 16px; font-weight: 600; margin-top: 8px;">The Dashboard</h3>
+      <p style="color: var(--zinc-300); font-size: 14px;">The included Next.js Dashboard provides institutional-level visibility.</p>
+
+      <div class="stat-grid">
+        <div class="stat-card">
+          <div class="label">Equity Curves</div>
+          <div class="value" style="font-size: 14px; font-weight: 500; color: var(--zinc-300);">Real-time portfolio performance and drawdown stats.</div>
+        </div>
+        <div class="stat-card">
+          <div class="label">Prediction Logs</div>
+          <div class="value" style="font-size: 14px; font-weight: 500; color: var(--zinc-300);">Expandable logs showing news headlines and AI reasoning for every trade.</div>
+        </div>
+        <div class="stat-card">
+          <div class="label">Execution History</div>
+          <div class="value" style="font-size: 14px; font-weight: 500; color: var(--zinc-300);">Full order logs with actual fill prices and exchange fees.</div>
+        </div>
+        <div class="stat-card">
+          <div class="label">Risk Status</div>
+          <div class="value" style="font-size: 14px; font-weight: 500; color: var(--zinc-300);">Kill switch state, daily drawdown, and guardrail violations.</div>
+        </div>
+      </div>
+    </section>
+
+    <hr>
+
+    <!-- Developer Setup -->
+    <section id="setup">
+      <h2>Developer Setup</h2>
+
+      <h3 style="font-size: 16px; font-weight: 600;">Prerequisites</h3>
+      <ul class="prereq-list">
+        <li><strong>Python 3.12+</strong></li>
+        <li><strong>Coinbase CDP API Keys</strong></li>
+        <li><strong>Anthropic / xAI API Keys</strong> &mdash; Optional, for AI strategies</li>
+      </ul>
+
+      <h3 style="font-size: 16px; font-weight: 600; margin-top: 8px;">Quick Start</h3>
+      <pre><code><span class="comment"># Clone and install in editable mode</span>
+<span class="cmd">git clone</span> &lt;repo-url&gt; coinbase_trading_bot
+<span class="cmd">cd</span> coinbase_trading_bot
+<span class="cmd">python</span> -m venv .venv
+<span class="cmd">source</span> .venv/bin/activate
+<span class="cmd">pip install</span> -e ".[dev]"
+
+<span class="comment"># Configure environment</span>
+<span class="cmd">cp</span> .env.example .env
+
+<span class="comment"># Verify plumbing with the Interactive Smoke Test</span>
+<span class="cmd">python</span> scripts/smoke_test.py</code></pre>
+
+      <h3 style="font-size: 16px; font-weight: 600; margin-top: 8px;">Reliability Testing</h3>
+      <p style="color: var(--zinc-300); font-size: 14px;">80+ unit and integration tests using mocked Coinbase responses.</p>
+      <pre><code><span class="cmd">pytest</span> --cov=src</code></pre>
+    </section>
+
+    <hr>
+
+    <!-- Disclaimers -->
+    <section>
+      <h2>Disclaimers</h2>
+      <div class="alert">
+        <strong>For Research and Educational Purposes Only.</strong><br>
+        Digital asset trading involves significant risk. This software is provided "as-is" without warranties. Always validate your strategies via the <code style="background: rgba(255,255,255,0.1); padding: 2px 6px; border-radius: 4px;">smoke_test.py</code> script and paper trading before deploying capital.
+      </div>
+    </section>
+
+  </div>
+
+  <footer>
+    Coinbase Trading Bot &middot; Async Event-Driven Framework
+  </footer>
+
+</body>
+</html>
