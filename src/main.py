@@ -1,4 +1,5 @@
 # src/main.py
+import argparse
 import asyncio
 import logging
 import signal
@@ -12,9 +13,9 @@ from src.market_data import MarketData
 from src.order_manager import OrderManager
 from src.portfolio_tracker import PortfolioTracker
 from src.position_tracker import PositionTracker
-from src.risk_manager import RiskManager
-from src.llm_client import AnthropicLLMClient, OpenAICompatibleLLMClient
 from src.price_buffer import PriceBuffer
+from src.registry import LLM_PROVIDERS, STRATEGIES
+from src.risk_manager import RiskManager
 
 logging.basicConfig(
     level=logging.INFO,
@@ -23,7 +24,32 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Coinbase Trading Bot")
+
+    parser.add_argument(
+        "--strategy",
+        choices=list(STRATEGIES.keys()),
+        default="price_only",
+        help=" | ".join(f"{k}: {v['description']}" for k, v in STRATEGIES.items()),
+    )
+    parser.add_argument(
+        "--llm",
+        choices=list(LLM_PROVIDERS.keys()),
+        default="anthropic",
+        help=" | ".join(f"{k}: {v['description']}" for k, v in LLM_PROVIDERS.items()),
+    )
+    parser.add_argument(
+        "--model",
+        default=None,
+        help="LLM model ID (default depends on --llm provider)",
+    )
+
+    return parser.parse_args()
+
+
 async def main() -> None:
+    args = parse_args()
     settings = Settings()
     bus = EventBus()
 
@@ -74,59 +100,42 @@ async def main() -> None:
         db=db,
     )
 
-    # Strategy selection
+    # --- LLM client from registry ---
+    provider_config = LLM_PROVIDERS[args.llm]
+    model = args.model or provider_config["default_model"]
+
+    # Resolve API key from settings by env var name
+    key_env = provider_config["key_env"].lower()
+    api_key = getattr(settings, key_env, "")
+
+    provider_kwargs = {"api_key": api_key, "model": model}
+    if "base_url" in provider_config:
+        provider_kwargs["base_url"] = provider_config["base_url"]
+
+    llm_client = provider_config["class"](**provider_kwargs)
+
+    # --- Strategy from registry ---
     price_buffer = PriceBuffer(max_size=50)
 
-    # Build LLM client based on predictor_type
-    if settings.predictor_type == "kimi":
-        llm_client = OpenAICompatibleLLMClient(
-            api_key=settings.openrouter_api_key,
-            model=settings.openrouter_model,
-            base_url=settings.openrouter_base_url,
-        )
-    else:
-        llm_client = AnthropicLLMClient(
-            api_key=settings.anthropic_api_key,
-            model=settings.prediction_model,
-        )
+    strategy_kwargs = {
+        "bus": bus,
+        "price_buffer": price_buffer,
+        "llm_client": llm_client,
+        "settings": settings,
+        "product_id": settings.product_id,
+        "db": db,
+    }
 
-    if settings.strategy == "news":
+    # News strategy needs additional dependency
+    if args.strategy == "news":
         from src.news_service import NewsService
-        from src.strategy_news_prediction import NewsPredictionStrategy
-
-        if settings.predictor_type == "kimi":
-            from src.kimi_predictor import KimiPredictor
-            predictor = KimiPredictor(client=llm_client)
-        else:
-            from src.claude_predictor import ClaudePredictor
-            predictor = ClaudePredictor(client=llm_client)
-
-        news_service = NewsService(
+        strategy_kwargs["news_service"] = NewsService(
             api_key=settings.grok_api_key,
             model=settings.grok_model,
         )
-        strategy = NewsPredictionStrategy(
-            bus=bus,
-            price_buffer=price_buffer,
-            news_service=news_service,
-            predictor=predictor,
-            settings=settings,
-            product_id=settings.product_id,
-            db=db,
-        )
-    else:
-        from src.claude_price_only_predictor import ClaudePriceOnlyPredictor
-        from src.strategy_price_only import PriceOnlyStrategy
 
-        predictor = ClaudePriceOnlyPredictor(client=llm_client)
-        strategy = PriceOnlyStrategy(
-            bus=bus,
-            price_buffer=price_buffer,
-            predictor=predictor,
-            settings=settings,
-            product_id=settings.product_id,
-            db=db,
-        )
+    strategy_class = STRATEGIES[args.strategy]["class"]
+    strategy = strategy_class(**strategy_kwargs)
     strategy.register(bus)
 
     logger.info("All components initialized. Starting market data...")
@@ -149,8 +158,8 @@ async def main() -> None:
     await strategy.start()
     await portfolio_tracker.start()
 
-    logger.info("Bot running with %s strategy (interval=%dm)",
-                settings.strategy, settings.prediction_interval_minutes)
+    logger.info("Bot running with %s strategy + %s/%s (interval=%dm)",
+                args.strategy, args.llm, model, settings.prediction_interval_minutes)
     await stop_event.wait()
 
     # Cleanup
