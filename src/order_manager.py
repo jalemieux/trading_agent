@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from datetime import datetime, timezone
 
@@ -62,12 +63,21 @@ class OrderManager:
         success_resp = _get(result, "success_response") or {}
         cb_order_id = _get(success_resp, "order_id", "")
 
-        # Poll for fill details
-        order_details = self._coinbase.get_order(cb_order_id)
-        details = _get(order_details, "order")
-        filled_price = float(_get(details, "average_filled_price", 0) if details else 0)
-        filled_qty = float(_get(details, "filled_size", 0) if details else 0)
-        fee = float(_get(details, "total_fees", 0) if details else 0)
+        # Poll for fill details (market orders may not settle immediately)
+        filled_price = 0.0
+        filled_qty = 0.0
+        fee = 0.0
+        for attempt in range(5):
+            order_details = self._coinbase.get_order(cb_order_id)
+            details = _get(order_details, "order")
+            filled_qty = float(_get(details, "filled_size", 0) if details else 0)
+            if filled_qty > 0:
+                filled_price = float(_get(details, "average_filled_price", 0) if details else 0)
+                fee = float(_get(details, "total_fees", 0) if details else 0)
+                break
+            if attempt < 4:
+                logger.info("Order %s not yet filled, retrying in 1s... (attempt %d/5)", cb_order_id, attempt + 1)
+                await asyncio.sleep(1.0)
 
         # Persist
         await self._persist_order(
