@@ -10,6 +10,7 @@ from src.event_bus import EventBus
 from src.kill_switch import KillSwitch
 from src.market_data import MarketData
 from src.order_manager import OrderManager
+from src.portfolio_tracker import PortfolioTracker
 from src.position_tracker import PositionTracker
 from src.risk_manager import RiskManager
 from src.claude_predictor import ClaudePredictor
@@ -56,6 +57,9 @@ async def main() -> None:
     # Position tracker
     position_tracker = PositionTracker(db=db, bus=bus)
     position_tracker.register(bus)
+
+    # Portfolio tracker
+    portfolio_tracker = PortfolioTracker(db=db, bus=bus, interval_seconds=settings.prediction_interval_minutes * 60)
 
     # Market data
     market_data = MarketData(
@@ -105,12 +109,14 @@ async def main() -> None:
     # Start market data + strategy
     await market_data.start(product_ids=["BTC-USD"])
     await strategy.start()
+    await portfolio_tracker.start()
 
     logger.info("Bot running with Claude prediction strategy (interval=%dm)",
                 settings.prediction_interval_minutes)
     await stop_event.wait()
 
     # Cleanup
+    await portfolio_tracker.stop()
     await strategy.stop()
     await market_data.stop()
     await db.close()
