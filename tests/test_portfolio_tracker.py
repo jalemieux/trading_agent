@@ -1,4 +1,5 @@
 import pytest
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 from src.db import Database
@@ -15,9 +16,16 @@ async def db():
 
 
 def _mock_coinbase(accounts: list[dict]) -> MagicMock:
-    """Create a mock CoinbaseClient with get_accounts() returning given accounts."""
+    """Create a mock CoinbaseClient with get_accounts() returning SDK-style objects."""
     mock = MagicMock()
-    mock.get_accounts.return_value = {"accounts": accounts}
+    account_objects = [
+        SimpleNamespace(
+            currency=a["currency"],
+            available_balance=SimpleNamespace(**a["available_balance"]),
+        )
+        for a in accounts
+    ]
+    mock.get_accounts.return_value = SimpleNamespace(accounts=account_objects)
     return mock
 
 

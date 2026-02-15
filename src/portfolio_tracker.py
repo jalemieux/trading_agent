@@ -61,14 +61,15 @@ class PortfolioTracker:
             logger.exception("Failed to fetch Coinbase accounts, skipping snapshot")
             return
 
-        accounts = result.get("accounts", [])
+        accounts = getattr(result, "accounts", []) or []
 
         # Find base and quote currency balances
         base_balance = 0.0
         quote_balance = 0.0
         for account in accounts:
-            currency = account.get("currency", "")
-            balance = float(account.get("available_balance", {}).get("value", "0"))
+            currency = getattr(account, "currency", "")
+            available = getattr(account, "available_balance", None)
+            balance = float(getattr(available, "value", "0")) if available else 0.0
             if currency == self._base_currency:
                 base_balance = balance
             elif currency == self._quote_currency:
