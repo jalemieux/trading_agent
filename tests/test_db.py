@@ -59,3 +59,14 @@ async def test_set_kill_switch(db: Database):
     row = await db.execute_fetchone("SELECT active, reason FROM kill_switch WHERE id = 1")
     assert row[0] == 1
     assert row[1] == "daily loss"
+
+
+async def test_initialize_creates_new_tables(db: Database):
+    tables = await db.execute_fetchall(
+        "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
+    )
+    table_names = [row[0] for row in tables]
+    assert "price_history" in table_names
+    assert "predictions" in table_names
+    assert "news_history" in table_names
+    assert "portfolio_snapshots" in table_names

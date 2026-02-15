@@ -1,5 +1,7 @@
 import asyncio
 import logging
+import uuid
+from datetime import datetime, timezone
 
 from src.claude_predictor import ClaudePredictor, Prediction
 from src.config import Settings
@@ -99,6 +101,7 @@ class NewsPredictionStrategy:
         )
 
         await self._evaluate(prediction)
+        await self._log_prediction(prediction, headlines)
 
     async def _evaluate(self, prediction: Prediction) -> None:
         if prediction.current_price <= 0:
@@ -163,3 +166,39 @@ class NewsPredictionStrategy:
             (self._product_id,),
         )
         return float(row[0]) if row else 0.0
+
+    async def _log_prediction(self, prediction: Prediction, headlines: list[str]) -> None:
+        if self._db is None:
+            return
+
+        diff_pct = (
+            (prediction.target_price - prediction.current_price)
+            / prediction.current_price * 100
+        ) if prediction.current_price > 0 else 0
+
+        threshold = self._settings.trade_threshold_pct
+        if diff_pct > threshold:
+            action = "BUY"
+        elif diff_pct < -threshold:
+            action = "SELL"
+        else:
+            action = "HOLD"
+
+        pred_id = str(uuid.uuid4())
+        now = datetime.now(timezone.utc).isoformat()
+
+        await self._db.execute(
+            """INSERT INTO predictions (id, product_id, action, predicted_price, current_price,
+               confidence, reasoning, model, timestamp)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (pred_id, self._product_id, action, prediction.target_price,
+             prediction.current_price, abs(diff_pct), prediction.reasoning,
+             self._settings.prediction_model, now),
+        )
+
+        for headline in headlines:
+            await self._db.execute(
+                """INSERT INTO news_history (id, prediction_id, headline, source, sentiment, timestamp)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                (str(uuid.uuid4()), pred_id, headline, None, None, now),
+            )

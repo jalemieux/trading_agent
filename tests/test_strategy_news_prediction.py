@@ -3,6 +3,8 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from src.claude_predictor import Prediction
+from src.config import Settings
+from src.db import Database
 from src.event_bus import EventBus
 from src.events import OrderRequest, PriceUpdate
 from src.price_buffer import PriceBuffer
@@ -198,3 +200,49 @@ async def test_sell_blocked_when_no_position(strategy, bus, predictor):
     await strategy._run_prediction_cycle()
 
     assert len(orders) == 0
+
+
+async def test_prediction_cycle_logs_prediction_and_news():
+    db = Database(":memory:")
+    await db.initialize()
+    bus = EventBus()
+    price_buffer = PriceBuffer()
+    price_buffer.add(PriceUpdate(product_id="BTC-USD", price=50000.0, timestamp="2026-01-01T00:00:00Z"))
+
+    mock_news = AsyncMock()
+    mock_news.fetch_headlines = AsyncMock(return_value=["1. BTC surges - bullish", "2. Fed holds rates - neutral"])
+
+    mock_predictor = AsyncMock()
+    mock_predictor.predict = AsyncMock(return_value=Prediction(
+        target_price=50100.0,
+        timeframe_minutes=5,
+        reasoning="bullish momentum",
+        current_price=50000.0,
+        timestamp="2026-01-01T00:00:00Z",
+    ))
+
+    settings = MagicMock()
+    settings.trade_threshold_pct = 0.1
+    settings.trade_size_usd = 50.0
+    settings.prediction_interval_minutes = 5
+    settings.prediction_model = "test-model"
+
+    strategy = NewsPredictionStrategy(
+        bus=bus, price_buffer=price_buffer, news_service=mock_news,
+        predictor=mock_predictor, settings=settings, product_id="BTC-USD", db=db,
+    )
+
+    await strategy._run_prediction_cycle()
+
+    # Check prediction was logged
+    rows = await db.execute_fetchall("SELECT product_id, action, predicted_price, current_price, reasoning, model FROM predictions")
+    assert len(rows) == 1
+    assert rows[0][0] == "BTC-USD"
+    assert rows[0][2] == 50100.0  # predicted_price
+    assert rows[0][5] == "test-model"  # model
+
+    # Check news was logged
+    news_rows = await db.execute_fetchall("SELECT headline FROM news_history")
+    assert len(news_rows) == 2
+
+    await db.close()

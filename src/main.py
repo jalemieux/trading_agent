@@ -10,6 +10,7 @@ from src.event_bus import EventBus
 from src.kill_switch import KillSwitch
 from src.market_data import MarketData
 from src.order_manager import OrderManager
+from src.portfolio_tracker import PortfolioTracker
 from src.position_tracker import PositionTracker
 from src.risk_manager import RiskManager
 from src.price_buffer import PriceBuffer
@@ -54,12 +55,16 @@ async def main() -> None:
     position_tracker = PositionTracker(db=db, bus=bus)
     position_tracker.register(bus)
 
+    # Portfolio tracker
+    portfolio_tracker = PortfolioTracker(db=db, bus=bus, interval_seconds=settings.prediction_interval_minutes * 60)
+
     # Market data
     market_data = MarketData(
         bus=bus,
         api_key=settings.coinbase_api_key,
         api_secret=settings.coinbase_api_secret,
         key_file=settings.coinbase_key_file,
+        db=db,
     )
 
     # Strategy selection
@@ -123,12 +128,14 @@ async def main() -> None:
     # Start market data + strategy
     await market_data.start(product_ids=[settings.product_id])
     await strategy.start()
+    await portfolio_tracker.start()
 
     logger.info("Bot running with %s strategy (interval=%dm)",
                 settings.strategy, settings.prediction_interval_minutes)
     await stop_event.wait()
 
     # Cleanup
+    await portfolio_tracker.stop()
     await strategy.stop()
     await market_data.stop()
     await db.close()

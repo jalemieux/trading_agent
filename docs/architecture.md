@@ -6,32 +6,32 @@ Reference: [Design Document](plans/2026-02-14-coinbase-trading-bot-design.md)
 
 ```
                          Event Bus (asyncio pub/sub)
-    ┌──────────┬──────────┬──────────┬──────────┬──────────┐
-    │          │          │          │          │          │
-┌───▼───┐ ┌───▼───┐ ┌───▼───┐ ┌───▼───┐ ┌───▼───┐ ┌───▼─────┐
-│Market │ │Order  │ │Risk   │ │Pos.   │ │Kill   │ │Strategy │
-│Data   │ │Mgr    │ │Mgr    │ │Track  │ │Switch │ │(select) │
-└───┬───┘ └───┬───┘ └───────┘ └───┬───┘ └───────┘ └────┬────┘
-                                                        │
-                                         ┌──────────────┤
-                                         │              │
-                                  ┌──────▼───────┐ ┌───▼──────────┐
-                                  │ PriceOnly    │ │ News         │
-                                  │ Strategy     │ │ Strategy     │
-                                  └──────┬───────┘ └───┬──────────┘
-                                         │             │
-                                    ┌────▼──┐    ┌────▼──┬───▼───┐
-                                    │Price  │    │Price  │Claude │
-                                    │Only   │    │Buffer │Predict│
-                                    │Predict│    │       │+ News │
-                                    └───────┘    └───────┴───────┘
-    │         │                    │
-    └─────────┴────────────────────┘
+    ┌──────────┬──────────┬──────────┬──────────┬──────────┬──────────┐
+    │          │          │          │          │          │          │
+┌───▼───┐ ┌───▼───┐ ┌───▼───┐ ┌───▼───┐ ┌───▼───┐ ┌───▼─────┐ ┌──▼──────┐
+│Market │ │Order  │ │Risk   │ │Pos.   │ │Kill   │ │Strategy │ │Portfol. │
+│Data   │ │Mgr    │ │Mgr    │ │Track  │ │Switch │ │(select) │ │Tracker  │
+└───┬───┘ └───┬───┘ └───────┘ └───┬───┘ └───────┘ └────┬────┘ └────┬────┘
+                                                        │           │
+                                         ┌──────────────┤           │
+                                         │              │           │
+                                  ┌──────▼───────┐ ┌───▼──────────┐│
+                                  │ PriceOnly    │ │ News         ││
+                                  │ Strategy     │ │ Strategy     ││
+                                  └──────┬───────┘ └───┬──────────┘│
+                                         │             │           │
+                                    ┌────▼──┐    ┌────▼──┬───▼───┐│
+                                    │Price  │    │Price  │Claude ││
+                                    │Only   │    │Buffer │Predict││
+                                    │Predict│    │       │+ News ││
+                                    └───────┘    └───────┴───────┘│
+    │         │                    │               │
+    └─────────┴────────────────────┴───────────────┘
               │
-     ┌────────▼────────┐       ┌──────────┐
-     │ Coinbase Client  │       │  SQLite   │
-     │ (SDK wrapper)    │       │    DB     │
-     └──────────────────┘       └──────────┘
+     ┌────────▼────────┐       ┌──────────┐       ┌──────────────┐
+     │ Coinbase Client  │       │  SQLite   │◄──────│ Next.js UI   │
+     │ (SDK wrapper)    │       │    DB     │       │ (read-only)  │
+     └──────────────────┘       └──────────┘       └──────────────┘
 ```
 
 ## Components
@@ -53,7 +53,9 @@ Reference: [Design Document](plans/2026-02-14-coinbase-trading-bot-design.md)
 | NewsPredictionStrategy | `strategy_news_prediction.py` | Orchestrates prediction cycle: gathers prices + news, calls ClaudePredictor, emits OrderRequests | `PriceUpdate` | `OrderRequest` |
 | PriceOnlyStrategy | `strategy_price_only.py` | Orchestrates prediction cycle: uses price history only (no news), calls ClaudePriceOnlyPredictor, emits OrderRequests | `PriceUpdate` | `OrderRequest` |
 | ClaudePriceOnlyPredictor | `claude_price_only_predictor.py` | Calls Claude API with price history only (no news) to predict BTC targets | -- | -- |
+| PortfolioTracker | `portfolio_tracker.py` | Periodic snapshots of portfolio value, P&L, and positions | -- | -- |
 | Smoke Test | `scripts/smoke_test.py` | Interactive live plumbing validation — buy/sell/hold lifecycle | -- | -- |
+| Dashboard UI | `ui/` | Next.js TypeScript dashboard — reads SQLite DB read-only, 6 pages | -- | -- |
 
 ## Event Flow
 
@@ -152,6 +154,53 @@ Strategy/Manual
 | reason | TEXT | Why it was activated |
 | activated_at | TIMESTAMP | When activated |
 
+### price_history
+
+| Column | Type | Description |
+|--------|------|-------------|
+| product_id | TEXT | e.g., BTC-USD |
+| price | REAL | Tick price |
+| timestamp | TEXT | ISO 8601 UTC |
+
+Indexed: `(product_id, timestamp)`
+
+### predictions
+
+| Column | Type | Description |
+|--------|------|-------------|
+| id | TEXT PK | UUID |
+| product_id | TEXT | e.g., BTC-USD |
+| action | TEXT | BUY / SELL / HOLD |
+| predicted_price | REAL | Target price |
+| current_price | REAL | Price at prediction time |
+| confidence | REAL | Abs % difference |
+| reasoning | TEXT | Model reasoning |
+| model | TEXT | Model name |
+| timestamp | TEXT | ISO 8601 UTC |
+
+### news_history
+
+| Column | Type | Description |
+|--------|------|-------------|
+| id | TEXT PK | UUID |
+| prediction_id | TEXT FK | -> predictions.id |
+| headline | TEXT | News headline |
+| source | TEXT | Source (nullable) |
+| sentiment | TEXT | Sentiment (nullable) |
+| timestamp | TEXT | ISO 8601 UTC |
+
+### portfolio_snapshots
+
+| Column | Type | Description |
+|--------|------|-------------|
+| id | TEXT PK | UUID |
+| timestamp | TEXT | ISO 8601 UTC |
+| total_value_usd | REAL | Total portfolio value |
+| position_value_usd | REAL | Open position value |
+| realized_pnl_cumulative | REAL | Cumulative realized P&L |
+| unrealized_pnl | REAL | Unrealized P&L |
+| num_open_positions | INTEGER | Count of open positions |
+
 ## Risk Pipeline
 
 ```
@@ -184,3 +233,4 @@ OrderRequest arrives
 - **2026-02-14** -- Added PriceBuffer, NewsService (Grok API), ClaudePredictor (Anthropic API), and ClaudePredictionStrategy. 69 tests.
 - **2026-02-15** -- Added PriceOnlyStrategy and ClaudePriceOnlyPredictor for price-only predictions (no news). Renamed ClaudePredictionStrategy to NewsPredictionStrategy. Added `strategy` config field to switch between `price_only` and `news`. 82 tests.
 - **2026-02-15** -- Added `coinbase_key_file` and `product_id` config fields. CoinbaseClient and MarketData support key file auth. MarketData resolves product IDs by base currency. OrderManager polls for fill details (5 attempts). Fixed risk pipeline check order in docs.
+- **2026-02-15** -- Added 4 new DB tables (price_history, predictions, news_history, portfolio_snapshots), PortfolioTracker component, price tick persistence in MarketData, prediction/news logging, and Next.js dashboard UI with 6 pages.

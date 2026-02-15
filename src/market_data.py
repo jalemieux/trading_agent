@@ -1,4 +1,6 @@
 # src/market_data.py
+from __future__ import annotations
+
 import asyncio
 import json
 import logging
@@ -12,8 +14,9 @@ logger = logging.getLogger(__name__)
 
 
 class MarketData:
-    def __init__(self, bus: EventBus, api_key: str = "", api_secret: str = "", key_file: str = "", product_ids: list[str] | None = None) -> None:
+    def __init__(self, bus: EventBus, api_key: str = "", api_secret: str = "", key_file: str = "", product_ids: list[str] | None = None, db: Database | None = None) -> None:
         self._bus = bus
+        self._db = db
         self._loop: asyncio.AbstractEventLoop | None = None
         self._product_ids = set(product_ids or [])
         ws_kwargs: dict = {"on_message": lambda msg: self._schedule_on_message(msg)}
@@ -53,6 +56,11 @@ class MarketData:
                             timestamp=timestamp,
                         )
                     )
+                    if self._db:
+                        await self._db.execute(
+                            "INSERT INTO price_history (product_id, price, timestamp) VALUES (?, ?, ?)",
+                            (product_id, float(price_str), timestamp),
+                        )
 
     def _resolve_product_id(self, raw_id: str) -> str:
         if raw_id in self._product_ids:
