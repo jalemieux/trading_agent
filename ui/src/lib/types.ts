@@ -66,10 +66,8 @@ export interface PortfolioSnapshot {
   id: string;
   timestamp: string;
   total_value_usd: number;
-  position_value_usd: number;
   realized_pnl_cumulative: number;
   unrealized_pnl: number;
-  num_open_positions: number;
 }
 
 export interface KillSwitchStatus {
