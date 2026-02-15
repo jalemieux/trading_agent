@@ -16,6 +16,7 @@ Built with Python 3.12+, asyncio, and the official Coinbase SDK.
 - **Claude-powered price prediction** — uses Claude Opus 4.6 to predict BTC price targets
 - **Real-time crypto news** — fetches news/sentiment via Grok API (xAI)
 - **Configurable trading** — adjustable prediction interval, trade threshold, and size
+- **Trading dashboard** — Next.js web UI with portfolio equity curve, price charts, positions/orders tables, and prediction log
 
 ## Setup
 
@@ -73,7 +74,7 @@ The bot initializes all components and waits for a strategy to emit `OrderReques
 ## Running Tests
 
 ```bash
-# All 69 tests
+# All 74 tests
 pytest
 
 # With coverage
@@ -104,6 +105,24 @@ Walks through 7 stages interactively:
 
 Requires `.env` with valid `COINBASE_API_KEY` and `COINBASE_API_SECRET`.
 Uses a separate `smoke_test.db` database.
+
+## Dashboard UI
+
+```bash
+cd ui
+npm install
+npm run dev     # development at http://localhost:3000
+```
+
+Set `DB_PATH` in `ui/.env.local` to point at your `trading_bot.db`.
+
+The dashboard provides 6 pages:
+- **Overview** — current price, daily P&L, kill switch status, open position
+- **Portfolio** — equity curve chart with time range selector, drawdown stats
+- **Positions** — filterable table (All / Open / Closed)
+- **Orders** — full order log with fill prices and fees
+- **Prices** — price chart with buy/sell trade markers
+- **Predictions** — AI prediction log with expandable news headlines
 
 ## Architecture
 
@@ -155,8 +174,13 @@ coinbase_trading_bot/
 │   ├── news_service.py          # Grok API news/sentiment client
 │   ├── claude_predictor.py      # Claude API price predictions
 │   ├── strategy_claude_prediction.py  # AI prediction strategy
+│   ├── portfolio_tracker.py    # Periodic portfolio snapshots
 │   └── db.py                   # SQLite setup and migrations
-├── tests/                      # 69 tests (unit + integration)
+├── ui/                         # Next.js dashboard (TypeScript + Tailwind)
+│   ├── src/app/                # Pages and API routes
+│   ├── src/components/         # Shared UI components
+│   └── src/lib/                # DB connection and types
+├── tests/                      # 74 tests (unit + integration)
 ├── scripts/
 │   └── smoke_test.py           # Interactive live plumbing validation
 ├── docs/

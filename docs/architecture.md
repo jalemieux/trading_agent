@@ -6,26 +6,26 @@ Reference: [Design Document](plans/2026-02-14-coinbase-trading-bot-design.md)
 
 ```
                          Event Bus (asyncio pub/sub)
-    ┌──────────┬──────────┬──────────┬──────────┬──────────┐
-    │          │          │          │          │          │
-┌───▼───┐ ┌───▼───┐ ┌───▼───┐ ┌───▼───┐ ┌───▼───┐ ┌───▼─────┐
-│Market │ │Order  │ │Risk   │ │Pos.   │ │Kill   │ │Claude   │
-│Data   │ │Mgr    │ │Mgr    │ │Track  │ │Switch │ │Predict  │
-└───┬───┘ └───┬───┘ └───────┘ └───┬───┘ └───────┘ └────┬────┘
-                                                        │
-                                              ┌─────────┼─────────┐
-                                              │         │         │
+    ┌──────────┬──────────┬──────────┬──────────┬──────────┬──────────┐
+    │          │          │          │          │          │          │
+┌───▼───┐ ┌───▼───┐ ┌───▼───┐ ┌───▼───┐ ┌───▼───┐ ┌───▼─────┐ ┌──▼──────┐
+│Market │ │Order  │ │Risk   │ │Pos.   │ │Kill   │ │Claude   │ │Portfol. │
+│Data   │ │Mgr    │ │Mgr    │ │Track  │ │Switch │ │Predict  │ │Tracker  │
+└───┬───┘ └───┬───┘ └───────┘ └───┬───┘ └───────┘ └────┬────┘ └────┬────┘
+                                                        │           │
+                                              ┌─────────┼─────────┐ │
+                                              │         │         │ │
                                          ┌────▼──┐ ┌───▼───┐ ┌──▼───┐
                                          │Price  │ │Claude │ │News  │
                                          │Buffer │ │Predict│ │Svc   │
                                          └───────┘ └───────┘ └──────┘
-    │         │                    │
-    └─────────┴────────────────────┘
+    │         │                    │           │
+    └─────────┴────────────────────┴───────────┘
               │
-     ┌────────▼────────┐       ┌──────────┐
-     │ Coinbase Client  │       │  SQLite   │
-     │ (SDK wrapper)    │       │    DB     │
-     └──────────────────┘       └──────────┘
+     ┌────────▼────────┐       ┌──────────┐       ┌──────────────┐
+     │ Coinbase Client  │       │  SQLite   │◄──────│ Next.js UI   │
+     │ (SDK wrapper)    │       │    DB     │       │ (read-only)  │
+     └──────────────────┘       └──────────┘       └──────────────┘
 ```
 
 ## Components
@@ -45,7 +45,9 @@ Reference: [Design Document](plans/2026-02-14-coinbase-trading-bot-design.md)
 | ClaudePredictor | `claude_predictor.py` | Calls Claude API with price + news context to predict BTC targets | -- | -- |
 | NewsService | `news_service.py` | Fetches crypto news/sentiment via Grok API (xAI) | -- | -- |
 | ClaudePredictionStrategy | `strategy_claude_prediction.py` | Orchestrates prediction cycle: gathers prices + news, calls ClaudePredictor, emits OrderRequests | `PriceUpdate` | `OrderRequest` |
+| PortfolioTracker | `portfolio_tracker.py` | Periodic snapshots of portfolio value, P&L, and positions | -- | -- |
 | Smoke Test | `scripts/smoke_test.py` | Interactive live plumbing validation — buy/sell/hold lifecycle | -- | -- |
+| Dashboard UI | `ui/` | Next.js TypeScript dashboard — reads SQLite DB read-only, 6 pages | -- | -- |
 
 ## Event Flow
 
@@ -144,6 +146,53 @@ Strategy/Manual
 | reason | TEXT | Why it was activated |
 | activated_at | TIMESTAMP | When activated |
 
+### price_history
+
+| Column | Type | Description |
+|--------|------|-------------|
+| product_id | TEXT | e.g., BTC-USD |
+| price | REAL | Tick price |
+| timestamp | TEXT | ISO 8601 UTC |
+
+Indexed: `(product_id, timestamp)`
+
+### predictions
+
+| Column | Type | Description |
+|--------|------|-------------|
+| id | TEXT PK | UUID |
+| product_id | TEXT | e.g., BTC-USD |
+| action | TEXT | BUY / SELL / HOLD |
+| predicted_price | REAL | Target price |
+| current_price | REAL | Price at prediction time |
+| confidence | REAL | Abs % difference |
+| reasoning | TEXT | Model reasoning |
+| model | TEXT | Model name |
+| timestamp | TEXT | ISO 8601 UTC |
+
+### news_history
+
+| Column | Type | Description |
+|--------|------|-------------|
+| id | TEXT PK | UUID |
+| prediction_id | TEXT FK | -> predictions.id |
+| headline | TEXT | News headline |
+| source | TEXT | Source (nullable) |
+| sentiment | TEXT | Sentiment (nullable) |
+| timestamp | TEXT | ISO 8601 UTC |
+
+### portfolio_snapshots
+
+| Column | Type | Description |
+|--------|------|-------------|
+| id | TEXT PK | UUID |
+| timestamp | TEXT | ISO 8601 UTC |
+| total_value_usd | REAL | Total portfolio value |
+| position_value_usd | REAL | Open position value |
+| realized_pnl_cumulative | REAL | Cumulative realized P&L |
+| unrealized_pnl | REAL | Unrealized P&L |
+| num_open_positions | INTEGER | Count of open positions |
+
 ## Risk Pipeline
 
 ```
@@ -174,3 +223,4 @@ OrderRequest arrives
 - **2026-02-14** -- Initial architecture: EventBus, MarketData, OrderManager, RiskManager, PositionTracker, KillSwitch, Database, Config. 48 tests.
 - **2026-02-14** -- Added interactive smoke test script (`scripts/smoke_test.py`) for live plumbing validation.
 - **2026-02-14** -- Added PriceBuffer, NewsService (Grok API), ClaudePredictor (Anthropic API), and ClaudePredictionStrategy. 69 tests.
+- **2026-02-15** -- Added 4 new DB tables (price_history, predictions, news_history, portfolio_snapshots), PortfolioTracker component, price tick persistence in MarketData, prediction/news logging in ClaudePredictionStrategy, and Next.js dashboard UI with 6 pages. 74 tests.
