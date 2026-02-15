@@ -75,6 +75,26 @@ pytest tests/test_risk_manager.py -v
 
 Tests use mocked Coinbase responses -- no API keys or network access required.
 
+### Live Smoke Test
+
+Validates the full trading pipeline against the real Coinbase API:
+
+```bash
+python scripts/smoke_test.py
+```
+
+Walks through 7 stages interactively:
+1. **Connectivity** — API keys, account info, product lookup
+2. **Market Data** — WebSocket ticker subscription
+3. **Buy** — Market buy $1 of SOL-USDC
+4. **Verify** — Check position in DB
+5. **Hold** — Confirm position stays open
+6. **Sell** — Market sell all SOL
+7. **Summary** — P&L, fees, final state
+
+Requires `.env` with valid `COINBASE_API_KEY` and `COINBASE_API_SECRET`.
+Uses a separate `smoke_test.db` database.
+
 ## Architecture
 
 All components are independent nodes connected through an async `EventBus`. See [docs/architecture.md](docs/architecture.md) for the full component diagram, event flow, data model, and risk pipeline.
@@ -123,6 +143,8 @@ coinbase_trading_bot/
 │   ├── kill_switch.py          # Emergency halt
 │   └── db.py                   # SQLite setup and migrations
 ├── tests/                      # 48 tests (unit + integration)
+├── scripts/
+│   └── smoke_test.py           # Interactive live plumbing validation
 ├── docs/
 │   ├── architecture.md         # Component diagram, data model, flows
 │   └── plans/                  # Design documents
