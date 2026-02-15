@@ -12,10 +12,7 @@ from src.market_data import MarketData
 from src.order_manager import OrderManager
 from src.position_tracker import PositionTracker
 from src.risk_manager import RiskManager
-from src.claude_predictor import ClaudePredictor
-from src.news_service import NewsService
 from src.price_buffer import PriceBuffer
-from src.strategy_news_prediction import NewsPredictionStrategy
 
 logging.basicConfig(
     level=logging.INFO,
@@ -65,25 +62,48 @@ async def main() -> None:
         key_file=settings.coinbase_key_file,
     )
 
-    # Claude prediction strategy
+    # Strategy selection
     price_buffer = PriceBuffer(max_size=50)
-    news_service = NewsService(
-        api_key=settings.grok_api_key,
-        model=settings.grok_model,
-    )
-    claude_predictor = ClaudePredictor(
-        api_key=settings.anthropic_api_key,
-        model=settings.prediction_model,
-    )
-    strategy = NewsPredictionStrategy(
-        bus=bus,
-        price_buffer=price_buffer,
-        news_service=news_service,
-        predictor=claude_predictor,
-        settings=settings,
-        product_id="BTC-USD",
-        db=db,
-    )
+
+    if settings.strategy == "news":
+        from src.news_service import NewsService
+        from src.claude_predictor import ClaudePredictor
+        from src.strategy_news_prediction import NewsPredictionStrategy
+
+        news_service = NewsService(
+            api_key=settings.grok_api_key,
+            model=settings.grok_model,
+        )
+        predictor = ClaudePredictor(
+            api_key=settings.anthropic_api_key,
+            model=settings.prediction_model,
+        )
+        strategy = NewsPredictionStrategy(
+            bus=bus,
+            price_buffer=price_buffer,
+            news_service=news_service,
+            predictor=predictor,
+            settings=settings,
+            product_id="BTC-USD",
+            db=db,
+        )
+    else:
+        from src.claude_price_only_predictor import ClaudePriceOnlyPredictor
+        from src.strategy_price_only import PriceOnlyStrategy
+
+        predictor = ClaudePriceOnlyPredictor(
+            api_key=settings.anthropic_api_key,
+            model=settings.prediction_model,
+        )
+        strategy = PriceOnlyStrategy(
+            bus=bus,
+            price_buffer=price_buffer,
+            predictor=predictor,
+            settings=settings,
+            product_id="BTC-USD",
+            db=db,
+        )
+
     strategy.register(bus)
 
     logger.info("All components initialized. Starting market data...")
@@ -105,8 +125,8 @@ async def main() -> None:
     await market_data.start(product_ids=["BTC-USD"])
     await strategy.start()
 
-    logger.info("Bot running with Claude prediction strategy (interval=%dm)",
-                settings.prediction_interval_minutes)
+    logger.info("Bot running with %s strategy (interval=%dm)",
+                settings.strategy, settings.prediction_interval_minutes)
     await stop_event.wait()
 
     # Cleanup

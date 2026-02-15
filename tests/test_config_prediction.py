@@ -34,3 +34,14 @@ def test_prediction_settings_override():
     assert s.prediction_model == "claude-sonnet-4-5-20250929"
     assert s.trade_threshold_pct == 2.5
     assert s.trade_size_usd == 100.0
+
+
+def test_strategy_field_default():
+    """Strategy defaults to price_only."""
+    from src.config import Settings
+    s = Settings(
+        _env_file=None,
+        coinbase_api_key="k", coinbase_api_secret="s",
+        anthropic_api_key="a", grok_api_key="g",
+    )
+    assert s.strategy == "price_only"
