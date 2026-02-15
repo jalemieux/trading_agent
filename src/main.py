@@ -56,7 +56,13 @@ async def main() -> None:
     position_tracker.register(bus)
 
     # Portfolio tracker
-    portfolio_tracker = PortfolioTracker(db=db, bus=bus, interval_seconds=settings.prediction_interval_minutes * 60)
+    portfolio_tracker = PortfolioTracker(
+        db=db,
+        bus=bus,
+        coinbase=coinbase,
+        product_id=settings.product_id,
+        interval_seconds=settings.prediction_interval_minutes * 60,
+    )
 
     # Market data
     market_data = MarketData(
