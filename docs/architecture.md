@@ -195,11 +195,9 @@ Indexed: `(product_id, timestamp)`
 |--------|------|-------------|
 | id | TEXT PK | UUID |
 | timestamp | TEXT | ISO 8601 UTC |
-| total_value_usd | REAL | Total portfolio value |
-| position_value_usd | REAL | Open position value |
+| total_value_usd | REAL | Total portfolio value (from Coinbase account balances) |
 | realized_pnl_cumulative | REAL | Cumulative realized P&L |
 | unrealized_pnl | REAL | Unrealized P&L |
-| num_open_positions | INTEGER | Count of open positions |
 
 ## Risk Pipeline
 
@@ -234,3 +232,4 @@ OrderRequest arrives
 - **2026-02-15** -- Added PriceOnlyStrategy and ClaudePriceOnlyPredictor for price-only predictions (no news). Renamed ClaudePredictionStrategy to NewsPredictionStrategy. Added `strategy` config field to switch between `price_only` and `news`. 82 tests.
 - **2026-02-15** -- Added `coinbase_key_file` and `product_id` config fields. CoinbaseClient and MarketData support key file auth. MarketData resolves product IDs by base currency. OrderManager polls for fill details (5 attempts). Fixed risk pipeline check order in docs.
 - **2026-02-15** -- Added 4 new DB tables (price_history, predictions, news_history, portfolio_snapshots), PortfolioTracker component, price tick persistence in MarketData, prediction/news logging, and Next.js dashboard UI with 6 pages.
+- **2026-02-15** -- PortfolioTracker now sources total_value_usd from Coinbase account balances via get_accounts() instead of computing from local positions. Removed dead columns position_value_usd and num_open_positions from portfolio_snapshots schema and TS types. 89 tests.
