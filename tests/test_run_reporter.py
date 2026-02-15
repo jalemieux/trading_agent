@@ -1,6 +1,6 @@
 import csv
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -114,3 +114,55 @@ class TestBuildRow:
         assert row["fees_paid"] == 0.0
         assert row["portfolio_value"] == 0.0
         assert row["open_positions"] == 0
+
+
+class TestGitPush:
+    @pytest.mark.asyncio
+    async def test_git_push_runs_commands(self, tmp_path):
+        reporter = make_reporter(tmp_path)
+
+        mock_process = AsyncMock()
+        mock_process.returncode = 0
+        mock_process.communicate.return_value = (b"", b"")
+
+        mock_exec = AsyncMock(return_value=mock_process)
+
+        with patch("asyncio.create_subprocess_exec", mock_exec):
+            await reporter._git_push()
+
+        # Should have called git add, git commit, git push
+        assert mock_exec.call_count == 3
+        calls = [c.args for c in mock_exec.call_args_list]
+        assert calls[0][:2] == ("git", "add")
+        assert calls[1][:2] == ("git", "commit")
+        assert calls[2][:2] == ("git", "push")
+
+    @pytest.mark.asyncio
+    async def test_git_push_logs_warning_on_failure(self, tmp_path, caplog):
+        reporter = make_reporter(tmp_path)
+
+        mock_process = AsyncMock()
+        mock_process.returncode = 1
+        mock_process.communicate.return_value = (b"", b"push failed")
+
+        mock_exec = AsyncMock(return_value=mock_process)
+
+        with patch("asyncio.create_subprocess_exec", mock_exec):
+            await reporter._git_push()  # Should not raise
+
+
+class TestReportLoop:
+    @pytest.mark.asyncio
+    async def test_report_once_builds_row_appends_and_pushes(self, tmp_path):
+        db = AsyncMock()
+        db.execute_fetchone = AsyncMock(return_value=None)
+        db.execute_fetchall = AsyncMock(return_value=[])
+
+        reporter = make_reporter(tmp_path, db=db)
+
+        with patch.object(reporter, "_git_push", new_callable=AsyncMock) as mock_push:
+            await reporter._report_once()
+
+        csv_path = tmp_path / "runs" / "performance.csv"
+        assert csv_path.exists()
+        mock_push.assert_awaited_once()

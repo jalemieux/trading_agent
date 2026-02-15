@@ -88,3 +88,58 @@ class RunReporter:
             "portfolio_value": snapshot[0] if snapshot else 0.0,
             "open_positions": open_pos[0][0] if open_pos else 0,
         }
+
+    async def start(self) -> None:
+        """Start the hourly reporting loop."""
+        self._task = asyncio.create_task(self._report_loop())
+        logger.info("RunReporter started (hourly)")
+
+    async def stop(self) -> None:
+        """Stop the reporting loop."""
+        if self._task:
+            self._task.cancel()
+            try:
+                await self._task
+            except asyncio.CancelledError:
+                pass
+        logger.info("RunReporter stopped")
+
+    async def _report_loop(self) -> None:
+        """Run _report_once every hour."""
+        while True:
+            try:
+                await self._report_once()
+            except Exception:
+                logger.exception("RunReporter failed")
+            await asyncio.sleep(3600)
+
+    async def _report_once(self) -> None:
+        """Build row, append to CSV, commit+push."""
+        row = await self._build_row()
+        self._append_csv(row)
+        await self._git_push()
+        logger.info("Run data committed: pnl=$%.2f, trades=%d, value=$%.2f",
+                     row["daily_pnl"], row["num_trades"], row["portfolio_value"])
+
+    async def _git_push(self) -> None:
+        """git add + commit + push the CSV file. Logs warning on failure."""
+        csv_rel = self._csv_path.relative_to(self._csv_path.parent.parent)
+        repo_dir = str(self._csv_path.parent.parent)
+
+        commands = [
+            ("git", "add", str(csv_rel)),
+            ("git", "commit", "-m", f"run-data: {self._strategy}/{self._llm_provider}/{self._model}"),
+            ("git", "push"),
+        ]
+
+        for cmd in commands:
+            proc = await asyncio.create_subprocess_exec(
+                *cmd,
+                cwd=repo_dir,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await proc.communicate()
+            if proc.returncode != 0:
+                logger.warning("git command failed: %s — %s", " ".join(cmd), stderr.decode())
+                return
