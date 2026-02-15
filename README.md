@@ -185,8 +185,11 @@ coinbase_trading_bot/
 │   ├── kill_switch.py          # Emergency halt
 │   ├── price_buffer.py          # In-memory price history buffer
 │   ├── news_service.py          # Grok API news/sentiment client
-│   ├── claude_predictor.py      # Claude API price predictions (news strategy)
-│   ├── claude_price_only_predictor.py  # Claude API price-only predictions
+│   ├── prediction.py            # Shared Prediction dataclass + Predictor protocol
+│   ├── llm_client.py            # LLMClient protocol (Anthropic + OpenAI-compatible)
+│   ├── claude_predictor.py      # Claude predictions via LLMClient (news strategy)
+│   ├── kimi_predictor.py        # Kimi/OpenRouter predictions via LLMClient (news strategy)
+│   ├── claude_price_only_predictor.py  # Price-only predictions via LLMClient
 │   ├── strategy_news_prediction.py    # News + price prediction strategy
 │   ├── strategy_price_only.py         # Price-only prediction strategy
 │   ├── portfolio_tracker.py    # Periodic portfolio snapshots
