@@ -9,7 +9,10 @@ class Settings(BaseSettings):
     max_daily_loss_usd: float = 500.0
     db_path: str = "trading_bot.db"
 
-    # Claude prediction strategy
+    # Strategy selection
+    strategy: str = "price_only"  # "price_only" or "news"
+
+    # Prediction settings
     anthropic_api_key: str = ""
     grok_api_key: str = ""
     prediction_interval_minutes: int = 5

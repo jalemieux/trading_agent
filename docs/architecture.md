@@ -9,16 +9,22 @@ Reference: [Design Document](plans/2026-02-14-coinbase-trading-bot-design.md)
     ┌──────────┬──────────┬──────────┬──────────┬──────────┐
     │          │          │          │          │          │
 ┌───▼───┐ ┌───▼───┐ ┌───▼───┐ ┌───▼───┐ ┌───▼───┐ ┌───▼─────┐
-│Market │ │Order  │ │Risk   │ │Pos.   │ │Kill   │ │Claude   │
-│Data   │ │Mgr    │ │Mgr    │ │Track  │ │Switch │ │Predict  │
+│Market │ │Order  │ │Risk   │ │Pos.   │ │Kill   │ │Strategy │
+│Data   │ │Mgr    │ │Mgr    │ │Track  │ │Switch │ │(select) │
 └───┬───┘ └───┬───┘ └───────┘ └───┬───┘ └───────┘ └────┬────┘
                                                         │
-                                              ┌─────────┼─────────┐
-                                              │         │         │
-                                         ┌────▼──┐ ┌───▼───┐ ┌──▼───┐
-                                         │Price  │ │Claude │ │News  │
-                                         │Buffer │ │Predict│ │Svc   │
-                                         └───────┘ └───────┘ └──────┘
+                                         ┌──────────────┤
+                                         │              │
+                                  ┌──────▼───────┐ ┌───▼──────────┐
+                                  │ PriceOnly    │ │ News         │
+                                  │ Strategy     │ │ Strategy     │
+                                  └──────┬───────┘ └───┬──────────┘
+                                         │             │
+                                    ┌────▼──┐    ┌────▼──┬───▼───┐
+                                    │Price  │    │Price  │Claude │
+                                    │Only   │    │Buffer │Predict│
+                                    │Predict│    │       │+ News │
+                                    └───────┘    └───────┴───────┘
     │         │                    │
     └─────────┴────────────────────┘
               │
@@ -44,7 +50,9 @@ Reference: [Design Document](plans/2026-02-14-coinbase-trading-bot-design.md)
 | PriceBuffer | `price_buffer.py` | In-memory rolling buffer of recent prices | `PriceUpdate` | -- |
 | ClaudePredictor | `claude_predictor.py` | Calls Claude API with price + news context to predict BTC targets | -- | -- |
 | NewsService | `news_service.py` | Fetches crypto news/sentiment via Grok API (xAI) | -- | -- |
-| ClaudePredictionStrategy | `strategy_claude_prediction.py` | Orchestrates prediction cycle: gathers prices + news, calls ClaudePredictor, emits OrderRequests | `PriceUpdate` | `OrderRequest` |
+| NewsPredictionStrategy | `strategy_news_prediction.py` | Orchestrates prediction cycle: gathers prices + news, calls ClaudePredictor, emits OrderRequests | `PriceUpdate` | `OrderRequest` |
+| PriceOnlyStrategy | `strategy_price_only.py` | Orchestrates prediction cycle: uses price history only (no news), calls ClaudePriceOnlyPredictor, emits OrderRequests | `PriceUpdate` | `OrderRequest` |
+| ClaudePriceOnlyPredictor | `claude_price_only_predictor.py` | Calls Claude API with price history only (no news) to predict BTC targets | -- | -- |
 | Smoke Test | `scripts/smoke_test.py` | Interactive live plumbing validation — buy/sell/hold lifecycle | -- | -- |
 
 ## Event Flow
@@ -174,3 +182,4 @@ OrderRequest arrives
 - **2026-02-14** -- Initial architecture: EventBus, MarketData, OrderManager, RiskManager, PositionTracker, KillSwitch, Database, Config. 48 tests.
 - **2026-02-14** -- Added interactive smoke test script (`scripts/smoke_test.py`) for live plumbing validation.
 - **2026-02-14** -- Added PriceBuffer, NewsService (Grok API), ClaudePredictor (Anthropic API), and ClaudePredictionStrategy. 69 tests.
+- **2026-02-15** -- Added PriceOnlyStrategy and ClaudePriceOnlyPredictor for price-only predictions (no news). Renamed ClaudePredictionStrategy to NewsPredictionStrategy. Added `strategy` config field to switch between `price_only` and `news`. 82 tests.

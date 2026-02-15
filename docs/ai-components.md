@@ -36,6 +36,14 @@ class Settings(BaseSettings):
     max_order_size_usd: float = 100.0
     max_daily_loss_usd: float = 500.0
     db_path: str = "trading_bot.db"
+    strategy: str = "price_only"  # "price_only" or "news"
+    anthropic_api_key: str = ""
+    grok_api_key: str = ""
+    prediction_interval_minutes: int = 5
+    prediction_model: str = "claude-opus-4-6"
+    grok_model: str = "grok-3-mini-fast"
+    trade_threshold_pct: float = 1.0
+    trade_size_usd: float = 50.0
 ```
 
 Loads from `.env` file via pydantic-settings. Env var names are UPPER_SNAKE_CASE versions of field names.
@@ -345,10 +353,10 @@ Dependencies: anthropic SDK, events
 
 ---
 
-## ClaudePredictionStrategy — `src/strategy_claude_prediction.py`
+## NewsPredictionStrategy — `src/strategy_news_prediction.py`
 
 ```
-class ClaudePredictionStrategy:
+class NewsPredictionStrategy:
     __init__(bus, price_buffer, news_service, predictor, settings, product_id="BTC-USD", db=None)
     register(bus) → None
     start() → None  # async, starts timer loop
@@ -375,5 +383,63 @@ Behavior:
 - Each cycle: snapshot prices → fetch headlines → predict → evaluate prediction vs current price
 - If predicted price differs from current by more than `trade_threshold_pct`, emits OrderRequest (BUY if higher, SELL if lower)
 - stop() cancels the timer task
+- Selected when `strategy = "news"` in config
 
 Dependencies: PriceBuffer, NewsService, ClaudePredictor, EventBus, Database, Settings
+
+---
+
+## PriceOnlyStrategy — `src/strategy_price_only.py`
+
+```
+class PriceOnlyStrategy:
+    __init__(bus, price_buffer, predictor, settings, product_id="BTC-USD", db=None)
+    register(bus) → None
+    start() → None  # async, starts timer loop
+    stop() → None   # async, cancels timer
+```
+
+Subscribes to: PriceUpdate
+Publishes: OrderRequest
+
+Internal state:
+- `_bus: EventBus`
+- `_price_buffer: PriceBuffer`
+- `_predictor: ClaudePriceOnlyPredictor`
+- `_settings: Settings`
+- `_product_id: str`
+- `_db: Database | None`
+- `_task: asyncio.Task | None`
+
+Behavior:
+- Same loop/evaluate/position pattern as NewsPredictionStrategy but without news
+- register() subscribes to PriceUpdate, delegates to _on_price which feeds the PriceBuffer
+- start() launches an asyncio task that runs a prediction loop (30s initial delay, then timer)
+- Each cycle: snapshot prices → predict (price-only) → evaluate prediction vs current price
+- If predicted price differs from current by more than `trade_threshold_pct`, emits OrderRequest
+- No news_service dependency
+- Selected when `strategy = "price_only"` in config (default)
+
+Dependencies: PriceBuffer, ClaudePriceOnlyPredictor, EventBus, Database, Settings
+
+---
+
+## ClaudePriceOnlyPredictor — `src/claude_price_only_predictor.py`
+
+```
+class ClaudePriceOnlyPredictor:
+    __init__(api_key: str, model: str = "claude-opus-4-6")
+    predict(prices: list[PriceUpdate]) → Prediction | None  # async
+```
+
+Internal state:
+- `_model: str`
+- `_client: AsyncAnthropic`
+
+Behavior:
+- Sends price history only (no news) to Claude API as a structured prompt
+- System prompt focuses on technical analysis and price action patterns
+- Parses JSON response into a Prediction dataclass (reuses from claude_predictor)
+- Returns None on any failure (API error, malformed response, empty prices)
+
+Dependencies: anthropic SDK, events, claude_predictor (Prediction dataclass)
