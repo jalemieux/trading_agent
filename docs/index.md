@@ -8,7 +8,7 @@
 
 ---
 
-## 🏗 System Architecture
+## System Architecture
 
 The framework is built on an **Async Event Bus** architecture. All components are decoupled nodes that communicate via typed, immutable events, ensuring non-blocking execution and high throughput.
 
@@ -34,7 +34,7 @@ graph TD
 
 ---
 
-## 🧠 Intelligence Layer
+## Intelligence Layer
 
 The system treats trading as a multi-modal cognitive process rather than a set of rigid indicators:
 
@@ -44,7 +44,7 @@ The system treats trading as a multi-modal cognitive process rather than a set o
 
 ---
 
-## 🛡 Risk Management & Transparency
+## Risk Management & Transparency
 
 In quantitative trading, defense is the only way to survive. This system implements a **three-stage validation pipeline** that functions as a persistent circuit breaker:
 
@@ -62,7 +62,7 @@ A sophisticated bot shouldn't be a black box. The included **Next.js Dashboard**
 
 ---
 
-## 🚀 Developer Setup
+## Developer Setup
 
 ### Prerequisites
 
@@ -99,7 +99,7 @@ pytest --cov=src
 
 ---
 
-## ⚖️ Disclaimers
+## Disclaimers
 
 **For Research and Educational Purposes Only.**
 Digital asset trading involves significant risk. This software is provided "as-is" without warranties. Always validate your strategies via the `smoke_test.py` script and paper trading before deploying capital.
