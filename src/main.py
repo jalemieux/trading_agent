@@ -3,6 +3,7 @@ import argparse
 import asyncio
 import logging
 import signal
+from pathlib import Path
 
 from src.coinbase_client import CoinbaseClient
 from src.config import Settings
@@ -13,6 +14,7 @@ from src.market_data import MarketData
 from src.order_manager import OrderManager
 from src.portfolio_tracker import PortfolioTracker
 from src.position_tracker import PositionTracker
+from src.run_reporter import RunReporter
 from src.price_buffer import PriceBuffer
 from src.registry import LLM_PROVIDERS, STRATEGIES
 from src.risk_manager import RiskManager
@@ -158,11 +160,23 @@ async def main() -> None:
     await strategy.start()
     await portfolio_tracker.start()
 
+    # Run reporter (hourly git commits of performance data)
+    run_reporter = RunReporter(
+        db=db,
+        strategy=args.strategy,
+        llm_provider=args.llm,
+        model=model,
+        product_id=settings.product_id,
+        repo_path=Path(__file__).resolve().parent.parent,
+    )
+    await run_reporter.start()
+
     logger.info("Bot running with %s strategy + %s/%s (interval=%dm)",
                 args.strategy, args.llm, model, settings.prediction_interval_minutes)
     await stop_event.wait()
 
     # Cleanup
+    await run_reporter.stop()
     await portfolio_tracker.stop()
     await strategy.stop()
     await market_data.stop()
