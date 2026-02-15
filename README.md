@@ -14,8 +14,9 @@ Built with Python 3.12+, asyncio, and the official Coinbase SDK.
 - **Event-driven architecture** -- all components communicate via async pub/sub
 - **SQLite persistence** for positions, orders, and daily summaries
 - **Claude-powered price prediction** — uses Claude Opus 4.6 to predict BTC price targets
-- **Real-time crypto news** — fetches news/sentiment via Grok API (xAI)
-- **Configurable trading** — adjustable prediction interval, trade threshold, and size
+- **Two strategy modes** — `price_only` (technical analysis only) or `news` (price + news sentiment)
+- **Real-time crypto news** — fetches news/sentiment via Grok API (xAI) (news strategy)
+- **Configurable trading** — adjustable prediction interval, trade threshold, size, and strategy
 
 ## Setup
 
@@ -61,6 +62,7 @@ DB_PATH=trading_bot.db
 | `GROK_MODEL` | Grok model for news | `grok-3-mini-fast` |
 | `TRADE_THRESHOLD_PCT` | Min % price difference to trigger trade | `1.0` |
 | `TRADE_SIZE_USD` | USD amount per trade | `50.0` |
+| `STRATEGY` | Strategy mode: `price_only` or `news` | `price_only` |
 
 ### 3. Run
 
@@ -73,7 +75,7 @@ The bot initializes all components and waits for a strategy to emit `OrderReques
 ## Running Tests
 
 ```bash
-# All 69 tests
+# All 82 tests
 pytest
 
 # With coverage
@@ -153,10 +155,12 @@ coinbase_trading_bot/
 │   ├── kill_switch.py          # Emergency halt
 │   ├── price_buffer.py          # In-memory price history buffer
 │   ├── news_service.py          # Grok API news/sentiment client
-│   ├── claude_predictor.py      # Claude API price predictions
-│   ├── strategy_claude_prediction.py  # AI prediction strategy
+│   ├── claude_predictor.py      # Claude API price predictions (news strategy)
+│   ├── claude_price_only_predictor.py  # Claude API price-only predictions
+│   ├── strategy_news_prediction.py    # News + price prediction strategy
+│   ├── strategy_price_only.py         # Price-only prediction strategy
 │   └── db.py                   # SQLite setup and migrations
-├── tests/                      # 69 tests (unit + integration)
+├── tests/                      # 82 tests (unit + integration)
 ├── scripts/
 │   └── smoke_test.py           # Interactive live plumbing validation
 ├── docs/

@@ -33,8 +33,10 @@ market_data.py     ← event_bus, events (wraps coinbase SDK)
 price_buffer.py    ← events
 news_service.py    ← no internal deps (wraps openai SDK)
 claude_predictor.py← events (wraps anthropic SDK)
-strategy_claude_prediction.py ← price_buffer, news_service, claude_predictor, config, db, event_bus, events
-main.py            ← all of the above
+claude_price_only_predictor.py ← claude_predictor, events (wraps anthropic SDK)
+strategy_news_prediction.py ← price_buffer, news_service, claude_predictor, config, db, event_bus, events
+strategy_price_only.py ← price_buffer, claude_price_only_predictor, config, db, event_bus, events
+main.py            ← all of the above (conditional imports based on strategy config)
 ```
 
 ## Event Routing Table
@@ -44,10 +46,10 @@ EventBus subscriptions (registered in main.py):
 
 OrderRequest   → OrderManager._handle_order_request
 OrderFilled    → PositionTracker._handle_order_filled
-PriceUpdate    → ClaudePredictionStrategy._on_price
+PriceUpdate    → PriceOnlyStrategy._on_price (default) or NewsPredictionStrategy._on_price
 
 Published by:
-OrderRequest      — published by ClaudePredictionStrategy (BUY/SELL decisions)
+OrderRequest      — published by PriceOnlyStrategy or NewsPredictionStrategy (BUY/SELL decisions)
 PriceUpdate       — published by MarketData
 
 Not subscribed (published only):
@@ -75,8 +77,10 @@ src/
 ├── market_data.py:63        MarketData — WebSocket ticker
 ├── price_buffer.py:25        PriceBuffer — in-memory ring buffer per product
 ├── news_service.py:39        NewsService — Grok xAI news/sentiment client
-├── claude_predictor.py:84    ClaudePredictor — Claude API predictions
-└── strategy_claude_prediction.py:152  ClaudePredictionStrategy — timer-based AI strategy
+├── claude_predictor.py:84    ClaudePredictor — Claude API predictions (news strategy)
+├── claude_price_only_predictor.py:68  ClaudePriceOnlyPredictor — Claude API price-only predictions
+├── strategy_news_prediction.py:153  NewsPredictionStrategy — timer-based AI strategy (price + news)
+└── strategy_price_only.py:148  PriceOnlyStrategy — timer-based AI strategy (price only)
 
 tests/
 ├── test_event_bus.py        5 tests
@@ -92,7 +96,9 @@ tests/
 ├── test_price_buffer.py     5 tests
 ├── test_news_service.py     2 tests
 ├── test_claude_predictor.py 4 tests
-├── test_config_prediction.py 2 tests
-└── test_strategy_claude_prediction.py 8 tests
-                             ── 69 total
+├── test_config_prediction.py 3 tests
+├── test_claude_price_only_predictor.py 5 tests
+├── test_strategy_news_prediction.py 8 tests
+└── test_strategy_price_only.py 7 tests
+                             ── 82 total
 ```
