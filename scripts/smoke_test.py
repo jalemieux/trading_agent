@@ -329,8 +329,47 @@ async def get_open_position_qty(db: Database) -> float:
     )
     return row[0] if row else 0.0
 
-async def stage_sell(bus: EventBus, qty: float, filled: list, positions: list) -> None:
-    pass
+async def stage_sell(
+    bus: EventBus,
+    qty: float,
+    filled: list[OrderFilled],
+    positions: list[PositionChanged],
+) -> None:
+    header(6, "Sell")
+
+    if qty <= 0:
+        fail("No position to sell — skipping")
+        return
+
+    info(f"Placing market sell: {qty} SOL of {PRODUCT_ID}")
+    warn("This will sell real assets")
+
+    order = OrderRequest(
+        product_id=PRODUCT_ID,
+        side="SELL",
+        order_type="MARKET",
+        base_size=qty,
+    )
+    info(f"Order ID: {order.order_id}")
+
+    await bus.publish(order)
+
+    # Wait for event propagation
+    await asyncio.sleep(2.0)
+
+    if filled:
+        f = filled[0]
+        ok(f"Sell filled: {f.filled_qty} SOL @ ${f.filled_price:.4f}")
+        info(f"  Fee: ${f.fee:.6f}")
+        info(f"  Coinbase order ID: {f.coinbase_order_id}")
+    else:
+        fail("No OrderFilled event received for sell — check logs")
+
+    if positions:
+        p = positions[-1]
+        ok(f"Position status: {p.status} (qty={p.quantity})")
+    else:
+        warn("No PositionChanged event received")
 
 async def stage_summary(db: Database) -> None:
     pass
