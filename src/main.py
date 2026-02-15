@@ -15,7 +15,7 @@ from src.risk_manager import RiskManager
 from src.claude_predictor import ClaudePredictor
 from src.news_service import NewsService
 from src.price_buffer import PriceBuffer
-from src.strategy_claude_prediction import ClaudePredictionStrategy
+from src.strategy_news_prediction import NewsPredictionStrategy
 
 logging.basicConfig(
     level=logging.INFO,
@@ -75,7 +75,7 @@ async def main() -> None:
         api_key=settings.anthropic_api_key,
         model=settings.prediction_model,
     )
-    strategy = ClaudePredictionStrategy(
+    strategy = NewsPredictionStrategy(
         bus=bus,
         price_buffer=price_buffer,
         news_service=news_service,

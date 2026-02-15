@@ -6,7 +6,7 @@ from src.claude_predictor import Prediction
 from src.event_bus import EventBus
 from src.events import OrderRequest, PriceUpdate
 from src.price_buffer import PriceBuffer
-from src.strategy_claude_prediction import ClaudePredictionStrategy
+from src.strategy_news_prediction import NewsPredictionStrategy
 
 
 @pytest.fixture
@@ -50,7 +50,7 @@ def settings():
 
 @pytest.fixture
 def strategy(bus, price_buffer, news_service, predictor, settings):
-    return ClaudePredictionStrategy(
+    return NewsPredictionStrategy(
         bus=bus,
         price_buffer=price_buffer,
         news_service=news_service,
@@ -62,7 +62,7 @@ def strategy(bus, price_buffer, news_service, predictor, settings):
 
 async def test_on_price_feeds_buffer(bus, news_service, predictor, settings):
     buf = PriceBuffer()
-    strat = ClaudePredictionStrategy(
+    strat = NewsPredictionStrategy(
         bus=bus, price_buffer=buf, news_service=news_service,
         predictor=predictor, settings=settings, product_id="BTC-USD",
     )
@@ -137,7 +137,7 @@ async def test_neutral_prediction_no_order(strategy, bus, predictor):
 
 async def test_no_prices_skips_prediction(bus, news_service, predictor, settings):
     empty_buf = PriceBuffer()
-    strat = ClaudePredictionStrategy(
+    strat = NewsPredictionStrategy(
         bus=bus, price_buffer=empty_buf, news_service=news_service,
         predictor=predictor, settings=settings, product_id="BTC-USD",
     )

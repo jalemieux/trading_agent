@@ -12,7 +12,7 @@ from src.price_buffer import PriceBuffer
 logger = logging.getLogger(__name__)
 
 
-class ClaudePredictionStrategy:
+class NewsPredictionStrategy:
     def __init__(
         self,
         bus: EventBus,
