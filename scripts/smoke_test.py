@@ -276,13 +276,58 @@ async def stage_buy(
         warn("No PositionChanged event received")
 
 async def stage_verify_position(db: Database) -> None:
-    pass
+    header(4, "Verify Position")
+
+    row = await db.execute_fetchone(
+        "SELECT id, product_id, entry_price, quantity, status FROM positions WHERE product_id = ? AND status = 'OPEN'",
+        (PRODUCT_ID,),
+    )
+    if row:
+        pos_id, product, entry, qty, status = row
+        ok(f"Open position found in DB")
+        info(f"  Position ID: {pos_id}")
+        info(f"  Product:     {product}")
+        info(f"  Entry price: ${entry:.4f}")
+        info(f"  Quantity:    {qty}")
+        info(f"  Status:      {status}")
+    else:
+        fail(f"No open position for {PRODUCT_ID} in DB")
+
+    # Check order record
+    orders = await db.execute_fetchall(
+        "SELECT id, side, status, filled_price, filled_qty, fee, coinbase_id FROM orders WHERE product_id = ? ORDER BY created_at DESC LIMIT 1",
+        (PRODUCT_ID,),
+    )
+    if orders:
+        o = orders[0]
+        ok(f"Order record in DB: side={o[1]}, status={o[2]}, filled_price=${o[3]:.4f}, qty={o[4]}, fee=${o[5]:.6f}")
+        info(f"  Coinbase ID: {o[6]}")
+    else:
+        warn("No order record found in DB")
+
 
 async def stage_hold(db: Database) -> None:
-    pass
+    header(5, "Hold")
+
+    row = await db.execute_fetchone(
+        "SELECT entry_price, quantity FROM positions WHERE product_id = ? AND status = 'OPEN'",
+        (PRODUCT_ID,),
+    )
+    if row:
+        entry, qty = row
+        value = entry * qty
+        info(f"Holding {qty} SOL @ ${entry:.4f} (value ≈ ${value:.2f})")
+        ok("Position remains open — hold confirmed")
+    else:
+        fail("No open position to hold")
+
 
 async def get_open_position_qty(db: Database) -> float:
-    return 0.0
+    row = await db.execute_fetchone(
+        "SELECT quantity FROM positions WHERE product_id = ? AND status = 'OPEN'",
+        (PRODUCT_ID,),
+    )
+    return row[0] if row else 0.0
 
 async def stage_sell(bus: EventBus, qty: float, filled: list, positions: list) -> None:
     pass
