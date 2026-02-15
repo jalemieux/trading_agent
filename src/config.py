@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     anthropic_api_key: str = ""
     grok_api_key: str = ""
     openrouter_api_key: str = ""
+    groq_api_key: str = ""
 
     # Trading settings
     prediction_interval_minutes: int = 5
