@@ -157,14 +157,14 @@ Strategy/Manual
 ```
 OrderRequest arrives
     │
-    ├─ Kill switch active?
+    ├─ 1. Kill switch active?
     │   └─ YES ──► BLOCK (RiskViolation)
     │
-    ├─ Order size > MAX_ORDER_SIZE_USD?
-    │   └─ YES ──► BLOCK (RiskViolation)
-    │
-    ├─ Daily P&L loss > MAX_DAILY_LOSS_USD?
+    ├─ 2. Daily P&L loss > MAX_DAILY_LOSS_USD?
     │   └─ YES ──► ACTIVATE kill switch + BLOCK
+    │
+    ├─ 3. Order size > MAX_ORDER_SIZE_USD? (BUY only)
+    │   └─ YES ──► BLOCK (RiskViolation)
     │
     └─ All checks pass ──► APPROVED (forward to CoinbaseClient)
 ```
@@ -183,3 +183,4 @@ OrderRequest arrives
 - **2026-02-14** -- Added interactive smoke test script (`scripts/smoke_test.py`) for live plumbing validation.
 - **2026-02-14** -- Added PriceBuffer, NewsService (Grok API), ClaudePredictor (Anthropic API), and ClaudePredictionStrategy. 69 tests.
 - **2026-02-15** -- Added PriceOnlyStrategy and ClaudePriceOnlyPredictor for price-only predictions (no news). Renamed ClaudePredictionStrategy to NewsPredictionStrategy. Added `strategy` config field to switch between `price_only` and `news`. 82 tests.
+- **2026-02-15** -- Added `coinbase_key_file` and `product_id` config fields. CoinbaseClient and MarketData support key file auth. MarketData resolves product IDs by base currency. OrderManager polls for fill details (5 attempts). Fixed risk pipeline check order in docs.

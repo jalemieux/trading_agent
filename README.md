@@ -50,8 +50,9 @@ DB_PATH=trading_bot.db
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `COINBASE_API_KEY` | CDP API key (ES256 format) | (required) |
-| `COINBASE_API_SECRET` | CDP API secret (EC private key) | (required) |
+| `COINBASE_API_KEY` | CDP API key (ES256 format) | `""` |
+| `COINBASE_API_SECRET` | CDP API secret (EC private key) | `""` |
+| `COINBASE_KEY_FILE` | Path to CDP JSON key file (alternative to key/secret) | `""` |
 | `MAX_ORDER_SIZE_USD` | Max USD value per order | `100` |
 | `MAX_DAILY_LOSS_USD` | Daily loss limit before kill switch activates | `500` |
 | `DB_PATH` | SQLite database file path | `trading_bot.db` |
@@ -62,6 +63,7 @@ DB_PATH=trading_bot.db
 | `GROK_MODEL` | Grok model for news | `grok-3-mini-fast` |
 | `TRADE_THRESHOLD_PCT` | Min % price difference to trigger trade | `1.0` |
 | `TRADE_SIZE_USD` | USD amount per trade | `50.0` |
+| `PRODUCT_ID` | Trading pair to monitor and trade | `BTC-USD` |
 | `STRATEGY` | Strategy mode: `price_only` or `news` | `price_only` |
 
 ### 3. Run
@@ -70,7 +72,7 @@ DB_PATH=trading_bot.db
 python -m src.main
 ```
 
-The bot initializes all components and waits for a strategy to emit `OrderRequest` events. Shut down with `Ctrl+C` (graceful SIGINT/SIGTERM handling).
+The bot initializes all components, connects to the Coinbase WebSocket for price data, and starts the selected prediction strategy. Shut down with `Ctrl+C` (graceful SIGINT/SIGTERM handling).
 
 ## Running Tests
 
@@ -112,20 +114,25 @@ Uses a separate `smoke_test.db` database.
 All components are independent nodes connected through an async `EventBus`. See [docs/architecture.md](docs/architecture.md) for the full component diagram, event flow, data model, and risk pipeline.
 
 ```
-                     Event Bus (asyncio pub/sub)
-  ┌──────────┬──────────┬──────────┬──────────┬──────────┐
-  │          │          │          │          │          │
-┌─▼──┐  ┌───▼───┐  ┌───▼───┐  ┌───▼───┐  ┌───▼───┐  ┌─▼───────┐
-│Mkt │  │Order  │  │Risk   │  │Pos.   │  │Kill   │  │Claude   │
-│Data│  │Mgr    │  │Mgr    │  │Track  │  │Switch │  │Predict  │
-└─┬──┘  └───┬───┘  └───────┘  └───┬───┘  └───────┘  └─────────┘
-  │         │                      │
-  └─────────┴──────────────────────┘
-            │
-   ┌────────▼────────┐
-   │ Coinbase Client  │
-   │ (SDK wrapper)    │
-   └──────────────────┘
+                         Event Bus (asyncio pub/sub)
+    ┌──────────┬──────────┬──────────┬──────────┬──────────┐
+    │          │          │          │          │          │
+┌───▼───┐ ┌───▼───┐ ┌───▼───┐ ┌───▼───┐ ┌───▼───┐ ┌───▼─────┐
+│Market │ │Order  │ │Risk   │ │Pos.   │ │Kill   │ │Strategy │
+│Data   │ │Mgr    │ │Mgr    │ │Track  │ │Switch │ │(select) │
+└───┬───┘ └───┬───┘ └───────┘ └───┬───┘ └───────┘ └────┬────┘
+    │         │                    │          ┌──────────┤
+    │         │                    │          │          │
+    │         │                    │   ┌──────▼──┐ ┌────▼─────┐
+    │         │                    │   │PriceOnly│ │News      │
+    │         │                    │   │Strategy │ │Strategy  │
+    └─────────┴────────────────────┘   └────┬────┘ └────┬─────┘
+              │                             │           │
+     ┌────────▼────────┐              ┌─────▼───┐  ┌───▼──────┐
+     │ Coinbase Client  │              │Claude   │  │Claude    │
+     │ (SDK wrapper)    │              │PriceOnly│  │Predictor │
+     └──────────────────┘              │Predictor│  │+ News Svc│
+                                       └─────────┘  └──────────┘
 ```
 
 ## Risk Controls
@@ -143,7 +150,7 @@ If the daily loss limit is breached, the kill switch activates automatically and
 ```
 coinbase_trading_bot/
 ├── src/
-│   ├── main.py                 # Entry point, wires components
+│   ├── main.py                 # Entry point, wires components, strategy selection
 │   ├── config.py               # Pydantic settings from .env
 │   ├── event_bus.py            # Async pub/sub
 │   ├── events.py               # Event dataclasses
