@@ -37,6 +37,9 @@ class ClaudePredictionStrategy:
 
     async def _on_price(self, event: PriceUpdate) -> None:
         self._price_buffer.add(event)
+        count = len(self._price_buffer.snapshot(event.product_id))
+        if count == 1:
+            logger.info("First price tick for %s: $%.2f", event.product_id, event.price)
 
     async def start(self) -> None:
         self._task = asyncio.create_task(self._prediction_loop())
@@ -58,12 +61,17 @@ class ClaudePredictionStrategy:
 
     async def _prediction_loop(self) -> None:
         interval = self._settings.prediction_interval_minutes * 60
+        # Wait briefly for initial price data to arrive
+        logger.info("Waiting 30s for initial price data...")
+        await asyncio.sleep(30)
         while True:
-            await asyncio.sleep(interval)
+            logger.info("Starting prediction cycle...")
             try:
                 await self._run_prediction_cycle()
             except Exception:
                 logger.exception("Prediction cycle failed")
+            logger.info("Prediction cycle complete, next in %d minutes", interval // 60)
+            await asyncio.sleep(interval)
 
     async def _run_prediction_cycle(self) -> None:
         prices = self._price_buffer.snapshot(self._product_id)
@@ -71,7 +79,12 @@ class ClaudePredictionStrategy:
             logger.warning("No price data for %s, skipping prediction", self._product_id)
             return
 
-        headlines = await self._news_service.fetch_headlines(self._product_id)
+        logger.info("Fetching news headlines for %s...", self._product_id)
+        headlines = await self._news_service.fetch_headlines(
+            self._product_id,
+            lookback_minutes=self._settings.prediction_interval_minutes,
+        )
+        logger.info("Got %d headlines, requesting Claude prediction...", len(headlines))
         prediction = await self._predictor.predict(prices, headlines)
         if prediction is None:
             logger.warning("Prediction returned None, skipping")

@@ -12,9 +12,10 @@ logger = logging.getLogger(__name__)
 
 
 class MarketData:
-    def __init__(self, bus: EventBus, api_key: str = "", api_secret: str = "", key_file: str = "") -> None:
+    def __init__(self, bus: EventBus, api_key: str = "", api_secret: str = "", key_file: str = "", product_ids: list[str] | None = None) -> None:
         self._bus = bus
         self._loop: asyncio.AbstractEventLoop | None = None
+        self._product_ids = set(product_ids or [])
         ws_kwargs: dict = {"on_message": lambda msg: self._schedule_on_message(msg)}
         if key_file:
             ws_kwargs["key_file"] = key_file
@@ -39,9 +40,12 @@ class MarketData:
         timestamp = data.get("timestamp", "")
         for event in data.get("events", []):
             for ticker in event.get("tickers", []):
-                product_id = ticker.get("product_id")
+                raw_product_id = ticker.get("product_id")
                 price_str = ticker.get("price")
-                if product_id and price_str:
+                if raw_product_id and price_str:
+                    # Coinbase may return a different product ID than subscribed
+                    # (e.g. SOL-USD instead of SOL-USDC). Map to the subscribed ID.
+                    product_id = self._resolve_product_id(raw_product_id)
                     await self._bus.publish(
                         PriceUpdate(
                             product_id=product_id,
@@ -50,8 +54,19 @@ class MarketData:
                         )
                     )
 
+    def _resolve_product_id(self, raw_id: str) -> str:
+        if raw_id in self._product_ids:
+            return raw_id
+        # Match by base currency (e.g. SOL-USD → SOL-USDC)
+        raw_base = raw_id.split("-")[0]
+        for pid in self._product_ids:
+            if pid.split("-")[0] == raw_base:
+                return pid
+        return raw_id
+
     async def start(self, product_ids: list[str]) -> None:
         self._loop = asyncio.get_running_loop()
+        self._product_ids = set(product_ids)
         self._ws.open()
         self._ws.ticker(product_ids=product_ids)
         logger.info("Subscribed to ticker for %s", product_ids)

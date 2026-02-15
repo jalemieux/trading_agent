@@ -17,5 +17,6 @@ class Settings(BaseSettings):
     grok_model: str = "grok-3-mini-fast"
     trade_threshold_pct: float = 1.0
     trade_size_usd: float = 50.0
+    product_id: str = "BTC-USD"
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}

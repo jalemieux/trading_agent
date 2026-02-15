@@ -13,7 +13,7 @@ class NewsService:
             base_url="https://api.x.ai/v1",
         )
 
-    async def fetch_headlines(self, product_id: str) -> list[str]:
+    async def fetch_headlines(self, product_id: str, lookback_minutes: int = 5) -> list[str]:
         try:
             response = await self._client.chat.completions.create(
                 model=self._model,
@@ -22,13 +22,15 @@ class NewsService:
                         "role": "system",
                         "content": (
                             "You are a crypto news analyst. Return the 5 most important "
-                            "recent news headlines and sentiment about the requested asset. "
-                            "One headline per line, numbered. Be concise."
+                            f"news headlines from the last {lookback_minutes} minutes "
+                            "about the requested asset. Include sentiment (bullish/bearish/neutral) "
+                            "for each. One headline per line, numbered. Be concise. "
+                            "If there is no news from this period, say 'No recent news.'"
                         ),
                     },
                     {
                         "role": "user",
-                        "content": f"What are the latest news and sentiment for {product_id}?",
+                        "content": f"What are the news headlines from the last {lookback_minutes} minutes for {product_id}?",
                     },
                 ],
             )

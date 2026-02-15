@@ -81,7 +81,7 @@ async def main() -> None:
         news_service=news_service,
         predictor=claude_predictor,
         settings=settings,
-        product_id="BTC-USD",
+        product_id=settings.product_id,
         db=db,
     )
     strategy.register(bus)
@@ -102,7 +102,7 @@ async def main() -> None:
         loop.add_signal_handler(sig, shutdown)
 
     # Start market data + strategy
-    await market_data.start(product_ids=["BTC-USD"])
+    await market_data.start(product_ids=[settings.product_id])
     await strategy.start()
 
     logger.info("Bot running with Claude prediction strategy (interval=%dm)",
