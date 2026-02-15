@@ -12,6 +12,10 @@ from src.market_data import MarketData
 from src.order_manager import OrderManager
 from src.position_tracker import PositionTracker
 from src.risk_manager import RiskManager
+from src.claude_predictor import ClaudePredictor
+from src.news_service import NewsService
+from src.price_buffer import PriceBuffer
+from src.strategy_claude_prediction import ClaudePredictionStrategy
 
 logging.basicConfig(
     level=logging.INFO,
@@ -61,6 +65,27 @@ async def main() -> None:
         key_file=settings.coinbase_key_file,
     )
 
+    # Claude prediction strategy
+    price_buffer = PriceBuffer(max_size=50)
+    news_service = NewsService(
+        api_key=settings.grok_api_key,
+        model=settings.grok_model,
+    )
+    claude_predictor = ClaudePredictor(
+        api_key=settings.anthropic_api_key,
+        model=settings.prediction_model,
+    )
+    strategy = ClaudePredictionStrategy(
+        bus=bus,
+        price_buffer=price_buffer,
+        news_service=news_service,
+        predictor=claude_predictor,
+        settings=settings,
+        product_id="BTC-USD",
+        db=db,
+    )
+    strategy.register(bus)
+
     logger.info("All components initialized. Starting market data...")
     logger.info("Risk limits: max_order=$%.2f, max_daily_loss=$%.2f",
                 settings.max_order_size_usd, settings.max_daily_loss_usd)
@@ -76,14 +101,16 @@ async def main() -> None:
     for sig in (signal.SIGINT, signal.SIGTERM):
         loop.add_signal_handler(sig, shutdown)
 
-    # Start WebSocket (provide product IDs via env or default)
-    # For now, start without subscribing to any products
-    # Products will be subscribed when a strategy is attached
+    # Start market data + strategy
+    await market_data.start(product_ids=["BTC-USD"])
+    await strategy.start()
 
-    logger.info("Bot running. Waiting for strategy to emit OrderRequest events...")
+    logger.info("Bot running with Claude prediction strategy (interval=%dm)",
+                settings.prediction_interval_minutes)
     await stop_event.wait()
 
     # Cleanup
+    await strategy.stop()
     await market_data.stop()
     await db.close()
     logger.info("Shutdown complete")
