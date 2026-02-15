@@ -33,11 +33,12 @@ market_data.py     ← event_bus, events (wraps coinbase SDK)
 price_buffer.py    ← events
 news_service.py    ← no internal deps (wraps openai SDK)
 prediction.py      ← no internal deps
-llm_client.py      ← no internal deps (wraps anthropic + openai SDKs)
+llm_client.py      ← no internal deps (wraps anthropic + groq + openai SDKs)
 strategy.py        ← config, db, event_bus, events, prediction, price_buffer
 strategies/price_only.py ← llm_client, prediction, price_buffer, strategy
 strategies/news.py ← llm_client, news_service, prediction, strategy
 registry.py        ← llm_client, strategies/news, strategies/price_only
+run_reporter.py    ← db (queries daily_summary, portfolio_snapshots, positions)
 main.py            ← all of the above (CLI args select strategy + LLM provider via registry)
 ```
 
@@ -80,9 +81,10 @@ src/
 ├── price_buffer.py:25       PriceBuffer — in-memory ring buffer per product
 ├── news_service.py:41       NewsService — Grok xAI news/sentiment client
 ├── prediction.py:37         Prediction dataclass + parse_prediction() helper
-├── llm_client.py:42         LLMClient protocol + AnthropicLLMClient + OpenAICompatibleLLMClient
+├── llm_client.py:56         LLMClient protocol + AnthropicLLMClient + GroqLLMClient + OpenAICompatibleLLMClient
 ├── strategy.py:158          Strategy ABC — shared timer loop, evaluation, position checks
 ├── registry.py:30           STRATEGIES + LLM_PROVIDERS registries
+├── run_reporter.py:145      RunReporter — hourly CSV performance reporting + git push
 ├── strategies/
 │   ├── __init__.py          empty
 │   ├── price_only.py:57     PriceOnlyStrategy(Strategy) — price-only prompts + LLMClient
@@ -102,13 +104,14 @@ tests/
 ├── test_price_buffer.py     5 tests
 ├── test_news_service.py     2 tests
 ├── test_prediction.py       2 tests
-├── test_llm_client.py       5 tests
+├── test_llm_client.py       8 tests
 ├── test_config.py           2 tests
 ├── test_config_prediction.py 3 tests
 ├── test_strategy_base.py    tests for Strategy ABC
 ├── test_strategies_price_only.py  tests for PriceOnlyStrategy
 ├── test_strategies_news.py  tests for NewsPredictionStrategy
 ├── test_registry.py         tests for registry
-└── test_portfolio_tracker.py  tests for PortfolioTracker
-                             ── 96 total
+├── test_portfolio_tracker.py  tests for PortfolioTracker
+└── test_run_reporter.py     7 tests for RunReporter
+                             ── 108 total
 ```

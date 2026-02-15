@@ -39,6 +39,7 @@ class Settings(BaseSettings):
     db_path: str = "trading_bot.db"
     anthropic_api_key: str = ""
     grok_api_key: str = ""
+    groq_api_key: str = ""
     openrouter_api_key: str = ""
     prediction_interval_minutes: int = 5
     grok_model: str = "grok-3-mini-fast"
@@ -280,7 +281,7 @@ Dependencies: EventBus, coinbase-advanced-py (coinbase.websocket.WSClient)
 
 CLI args (via argparse):
 - `--strategy`: `price_only` (default) or `news` — selects from `STRATEGIES` registry
-- `--llm`: `anthropic` (default) or `openrouter` — selects from `LLM_PROVIDERS` registry
+- `--llm`: `anthropic` (default), `groq`, or `openrouter` — selects from `LLM_PROVIDERS` registry
 - `--model`: LLM model ID (default from provider config)
 
 Initialization order:
@@ -303,9 +304,12 @@ Initialization order:
 16. await market_data.start(product_ids=[settings.product_id])
 17. await strategy.start() — launches prediction loop
 18. await portfolio_tracker.start()
+19. RunReporter(db, strategy, llm_provider, model, product_id, repo_path)
+20. await run_reporter.start()
 
 Shutdown:
 - SIGINT/SIGTERM → sets asyncio.Event
+- await run_reporter.stop()
 - await portfolio_tracker.stop()
 - await strategy.stop()
 - await market_data.stop()
@@ -389,18 +393,23 @@ class AnthropicLLMClient:
     __init__(api_key: str, model: str)
     complete(system, user, max_tokens=512) → str  # async
 
+class GroqLLMClient:
+    __init__(api_key: str, model: str)
+    complete(system, user, max_tokens=512) → str  # async
+
 class OpenAICompatibleLLMClient:
     __init__(api_key: str, model: str, base_url: str)
     complete(system, user, max_tokens=512) → str  # async
 ```
 
-Transport-level LLM abstraction. `AnthropicLLMClient` wraps the Anthropic Messages API. `OpenAICompatibleLLMClient` wraps any OpenAI-compatible API (e.g., OpenRouter).
+Transport-level LLM abstraction. `AnthropicLLMClient` wraps the Anthropic Messages API. `GroqLLMClient` wraps the Groq API via `AsyncGroq`. `OpenAICompatibleLLMClient` wraps any OpenAI-compatible API (e.g., OpenRouter).
 
 Behavior:
 - AnthropicLLMClient: sends system param + user message to Anthropic, returns `response.content[0].text`
+- GroqLLMClient: sends system + user as chat messages via Groq SDK, returns `response.choices[0].message.content` (empty string if None/no choices)
 - OpenAICompatibleLLMClient: sends system + user as chat messages, returns `response.choices[0].message.content` (empty string if None)
 
-Dependencies: anthropic SDK, openai SDK
+Dependencies: anthropic SDK, groq SDK, openai SDK
 
 ---
 
@@ -500,6 +509,7 @@ STRATEGIES = {
 
 LLM_PROVIDERS = {
     "anthropic": {"class": AnthropicLLMClient, "default_model": "claude-opus-4-6", "key_env": "ANTHROPIC_API_KEY", ...},
+    "groq": {"class": GroqLLMClient, "default_model": "openai/gpt-oss-120b", "key_env": "GROQ_API_KEY", ...},
     "openrouter": {"class": OpenAICompatibleLLMClient, "default_model": "moonshotai/kimi-k2", "key_env": "OPENROUTER_API_KEY", "base_url": "...", ...},
 }
 ```
@@ -507,3 +517,39 @@ LLM_PROVIDERS = {
 Lookup dicts used by `main.py` to wire strategy + LLM provider from CLI args. Adding a new strategy or LLM provider is a single dict entry.
 
 Dependencies: llm_client, strategies/news, strategies/price_only
+
+---
+
+## RunReporter — `src/run_reporter.py`
+
+```
+class RunReporter:
+    __init__(db: Database, strategy: str, llm_provider: str, model: str,
+             product_id: str, repo_path: Path)
+    start() → None                  # async, launches hourly reporting task
+    stop() → None                   # async, cancels reporting task
+```
+
+Internal state:
+- `_db: Database`
+- `_strategy: str`, `_llm_provider: str`, `_model: str`, `_product_id: str`
+- `_csv_path: Path` — `{repo_path}/runs/performance.csv`
+- `_task: asyncio.Task | None`
+
+Private methods:
+- `_report_loop()` — async, runs `_report_once()` every 3600 seconds
+- `_report_once()` — async, builds row → appends CSV → git push
+- `_build_row() → dict` — async, queries `daily_summary`, `portfolio_snapshots`, `positions` tables
+- `_append_csv(row: dict)` — creates `runs/` dir + CSV header if needed, appends row
+- `_git_push()` — async, runs `git add`, `git commit`, `git push` via `asyncio.create_subprocess_exec`
+
+Behavior:
+- Timer-driven async loop (same pattern as PortfolioTracker)
+- Queries existing DB tables for metrics, no EventBus interaction
+- Creates `runs/performance.csv` with header on first write
+- Git operations run in subprocess; failures are logged as warnings, not raised
+- Returns zeros for all metrics when DB has no data
+
+CSV columns: `timestamp`, `strategy`, `llm_provider`, `model`, `product_id`, `daily_pnl`, `unrealized_pnl`, `num_trades`, `fees_paid`, `portfolio_value`, `open_positions`
+
+Dependencies: Database (queries), git (subprocess)

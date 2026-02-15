@@ -15,9 +15,10 @@ Built with Python 3.12+, asyncio, and the official Coinbase SDK.
 - **Event-driven architecture** -- all components communicate via async pub/sub
 - **SQLite persistence** for positions, orders, and daily summaries
 - **Decoupled strategy/LLM architecture** — strategies own prompts and data gathering; LLM clients are pure transport. Mix any strategy with any LLM provider via CLI flags
-- **CLI-driven configuration** — `--strategy price_only|news`, `--llm anthropic|openrouter`, `--model <model-id>`
+- **CLI-driven configuration** — `--strategy price_only|news`, `--llm anthropic|groq|openrouter`, `--model <model-id>`
 - **Two strategy modes** — `price_only` (technical analysis only) or `news` (price + news sentiment)
 - **Real-time crypto news** — fetches news/sentiment via Grok API (xAI) (news strategy)
+- **Hourly performance reporting** — auto-appends CSV with daily P&L, trades, fees, portfolio value to `runs/performance.csv` and commits/pushes to git
 - **Configurable trading** — adjustable prediction interval, trade threshold, size, and trading pair
 - **Trading dashboard** — Next.js web UI with portfolio equity curve, price charts, positions/orders tables, and prediction log
 
@@ -66,6 +67,7 @@ DB_PATH=trading_bot.db
 | `TRADE_THRESHOLD_PCT` | Min % price difference to trigger trade | `1.0` |
 | `TRADE_SIZE_USD` | USD amount per trade | `50.0` |
 | `PRODUCT_ID` | Trading pair to monitor and trade | `BTC-USD` |
+| `GROQ_API_KEY` | Groq API key (when using `--llm groq`) | `""` |
 | `OPENROUTER_API_KEY` | OpenRouter API key (when using `--llm openrouter`) | `""` |
 
 Strategy, LLM provider, and model are now selected via CLI args (see Run section below).
@@ -79,6 +81,9 @@ python -m src.main
 # Explicit strategy + LLM provider + model
 python -m src.main --strategy news --llm anthropic --model claude-opus-4-6
 
+# Use Groq for fast inference
+python -m src.main --strategy price_only --llm groq --model openai/gpt-oss-120b
+
 # Use OpenRouter with any compatible model
 python -m src.main --strategy price_only --llm openrouter --model moonshotai/kimi-k2
 ```
@@ -86,7 +91,7 @@ python -m src.main --strategy price_only --llm openrouter --model moonshotai/kim
 | CLI Flag | Options | Default | Description |
 |----------|---------|---------|-------------|
 | `--strategy` | `price_only`, `news` | `price_only` | Trading strategy |
-| `--llm` | `anthropic`, `openrouter` | `anthropic` | LLM provider |
+| `--llm` | `anthropic`, `groq`, `openrouter` | `anthropic` | LLM provider |
 | `--model` | any model ID | depends on `--llm` | LLM model ID |
 
 The bot initializes all components, connects to the Coinbase WebSocket for price data, and starts the selected prediction strategy. Shut down with `Ctrl+C` (graceful SIGINT/SIGTERM handling).
@@ -164,8 +169,8 @@ All components are independent nodes connected through an async `EventBus`. See 
     └─────────┴────────────────────┘   └────┬────┘ └────┬─────┘
               │                             │           │
      ┌────────▼────────┐              ┌─────▼───────────▼──┐
-     │ Coinbase Client  │              │  LLMClient Protocol │
-     │ (SDK wrapper)    │              │  (Anthropic|OpenAI) │
+     │ Coinbase Client  │              │   LLMClient Protocol  │
+     │ (SDK wrapper)    │              │(Anthropic|Groq|OAI) │
      └──────────────────┘              └────────────────────┘
 ```
 
@@ -197,13 +202,14 @@ coinbase_trading_bot/
 │   ├── price_buffer.py          # In-memory price history buffer
 │   ├── news_service.py          # Grok API news/sentiment client
 │   ├── prediction.py            # Shared Prediction dataclass + parse_prediction() helper
-│   ├── llm_client.py            # LLMClient protocol (Anthropic + OpenAI-compatible)
+│   ├── llm_client.py            # LLMClient protocol (Anthropic + Groq + OpenAI-compatible)
 │   ├── strategy.py              # Strategy ABC (shared logic: timer, evaluation, position checks)
 │   ├── registry.py              # STRATEGIES + LLM_PROVIDERS registries
 │   ├── strategies/
 │   │   ├── price_only.py        # PriceOnlyStrategy — price history only
 │   │   └── news.py              # NewsPredictionStrategy — price + news sentiment
 │   ├── portfolio_tracker.py    # Periodic portfolio snapshots
+│   ├── run_reporter.py         # Hourly CSV reporting + git push
 │   └── db.py                   # SQLite setup and migrations
 ├── ui/                         # Next.js dashboard (TypeScript + Tailwind)
 │   ├── src/app/                # Pages and API routes

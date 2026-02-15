@@ -25,10 +25,10 @@ Reference: [Design Document](plans/2026-02-14-coinbase-trading-bot-design.md)
               │                   │         │ Service │             │
      ┌────────▼────────┐     ┌────▼─────────┴─▼───┐                │
      │ Coinbase Client  │     │     LLMClient      │                │
-     │ (SDK wrapper)    │     │  ┌───────┐ ┌─────┐ │                │
-     └──────────────────┘     │  │Anthro-│ │Open-│ │                │
-                              │  │pic    │ │AI   │ │                │
-     ┌──────────────┐         │  └───────┘ └─────┘ │                │
+     │ (SDK wrapper)    │     │ ┌──────┐┌────┐┌───┐│                │
+     └──────────────────┘     │ │Anthr-││Groq││OAI││                │
+                              │ │opic  ││    ││   ││                │
+     ┌──────────────┐         │ └──────┘└────┘└───┘│                │
      │ Next.js UI   │         └────────────────────┘                │
      │ (read-only)  │──────►┌──────────┐◄───────────────────────────┘
      └──────────────┘       │  SQLite   │
@@ -51,13 +51,14 @@ Reference: [Design Document](plans/2026-02-14-coinbase-trading-bot-design.md)
 | Config | `config.py` | Pydantic settings loaded from `.env` | -- | -- |
 | PriceBuffer | `price_buffer.py` | In-memory rolling buffer of recent prices | `PriceUpdate` | -- |
 | Prediction | `prediction.py` | Shared prediction dataclass + `parse_prediction()` helper | -- | -- |
-| LLMClient | `llm_client.py` | Transport-level LLM abstraction (Anthropic + OpenAI-compatible) | -- | -- |
+| LLMClient | `llm_client.py` | Transport-level LLM abstraction (Anthropic + Groq + OpenAI-compatible) | -- | -- |
 | Strategy ABC | `strategy.py` | Shared strategy logic: timer loop, evaluation, position checks | `PriceUpdate` | `OrderRequest` |
 | PriceOnlyStrategy | `strategies/price_only.py` | Price-only prediction: builds prompt from price history, calls LLMClient | `PriceUpdate` | `OrderRequest` |
 | NewsPredictionStrategy | `strategies/news.py` | News + price prediction: builds prompt from prices + headlines, calls LLMClient | `PriceUpdate` | `OrderRequest` |
 | Registry | `registry.py` | `STRATEGIES` + `LLM_PROVIDERS` dicts for CLI-driven wiring | -- | -- |
 | NewsService | `news_service.py` | Fetches crypto news/sentiment via Grok API (xAI) | -- | -- |
 | PortfolioTracker | `portfolio_tracker.py` | Periodic snapshots of portfolio value, P&L, and positions | -- | -- |
+| RunReporter | `run_reporter.py` | Hourly CSV performance reporting + auto git commit/push | -- | -- |
 | Smoke Test | `scripts/smoke_test.py` | Interactive live plumbing validation — buy/sell/hold lifecycle | -- | -- |
 | Dashboard UI | `ui/` | Next.js TypeScript dashboard — reads SQLite DB read-only, 6 pages | -- | -- |
 
@@ -256,3 +257,5 @@ OrderRequest arrives
 - **2026-02-15** -- PortfolioTracker now sources total_value_usd from Coinbase account balances via get_accounts() instead of computing from local positions. Removed dead columns position_value_usd and num_open_positions from portfolio_snapshots schema and TS types. 89 tests.
 - **2026-02-15** -- Added LLM client abstraction layer (`LLMClient` protocol with `AnthropicLLMClient` and `OpenAICompatibleLLMClient`), shared `Prediction` dataclass and `Predictor` protocol, `KimiPredictor` for OpenRouter-based predictions, and predictor factory in `main.py`. All predictors now use constructor-injected `LLMClient` instead of raw API keys. Config gains `PREDICTOR_TYPE`, `OPENROUTER_API_KEY`, `OPENROUTER_MODEL`, `OPENROUTER_BASE_URL`. 103 tests.
 - **2026-02-15** -- Decoupled strategies from LLM providers. Replaced predictor classes with Strategy ABC (`src/strategy.py`) + concrete strategies (`src/strategies/`) that call `LLMClient` directly. Added `registry.py` for strategy/provider lookup, CLI args (`--strategy`, `--llm`, `--model`). Removed `Predictor` protocol, added `parse_prediction()` helper. Deleted old files: `claude_predictor.py`, `kimi_predictor.py`, `claude_price_only_predictor.py`, `strategy_news_prediction.py`, `strategy_price_only.py`. Simplified config (removed `strategy`, `predictor_type`, `prediction_model`, `openrouter_model`, `openrouter_base_url`). 96 tests.
+- **2026-02-15** -- Added Groq as LLM provider. New `GroqLLMClient` in `llm_client.py` using `groq` SDK (`AsyncGroq`). Registered in `registry.py` with default model `openai/gpt-oss-120b`. Added `groq>=0.13.0` dependency. Available via `--llm groq`. 108 tests.
+- **2026-02-15** -- Added RunReporter component. Appends hourly CSV rows to `runs/performance.csv` with daily P&L, trades, fees, portfolio value, and open positions. Auto-commits and pushes to git via subprocess. Timer-driven async loop (same pattern as PortfolioTracker). 108 tests.
