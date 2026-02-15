@@ -161,6 +161,12 @@ coinbase_trading_bot/
 │   └── smoke_test.py           # Interactive live plumbing validation
 ├── docs/
 │   ├── architecture.md         # Component diagram, data model, flows
+│   ├── ai-index.md             # AI reference: system summary, file map
+│   ├── ai-components.md        # AI reference: class details
+│   ├── ai-data.md              # AI reference: event/DB schemas
+│   ├── ai-traces.md            # AI reference: execution paths
+│   ├── ai-troubleshooting.md   # AI reference: failure modes
+│   ├── ai-extending.md         # AI reference: extension guide
 │   └── plans/                  # Design documents
 ├── pyproject.toml
 └── .env.example

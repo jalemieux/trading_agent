@@ -9,9 +9,16 @@ Reference: [Design Document](plans/2026-02-14-coinbase-trading-bot-design.md)
     ┌──────────┬──────────┬──────────┬──────────┬──────────┐
     │          │          │          │          │          │
 ┌───▼───┐ ┌───▼───┐ ┌───▼───┐ ┌───▼───┐ ┌───▼───┐ ┌───▼─────┐
-│Market │ │Order  │ │Risk   │ │Pos.   │ │Kill   │ │Strategy │
-│Data   │ │Mgr    │ │Mgr    │ │Track  │ │Switch │ │(future) │
-└───┬───┘ └───┬───┘ └───────┘ └───┬───┘ └───────┘ └─────────┘
+│Market │ │Order  │ │Risk   │ │Pos.   │ │Kill   │ │Claude   │
+│Data   │ │Mgr    │ │Mgr    │ │Track  │ │Switch │ │Predict  │
+└───┬───┘ └───┬───┘ └───────┘ └───┬───┘ └───────┘ └────┬────┘
+                                                        │
+                                              ┌─────────┼─────────┐
+                                              │         │         │
+                                         ┌────▼──┐ ┌───▼───┐ ┌──▼───┐
+                                         │Price  │ │Claude │ │News  │
+                                         │Buffer │ │Predict│ │Svc   │
+                                         └───────┘ └───────┘ └──────┘
     │         │                    │
     └─────────┴────────────────────┘
               │
@@ -34,6 +41,10 @@ Reference: [Design Document](plans/2026-02-14-coinbase-trading-bot-design.md)
 | CoinbaseClient | `coinbase_client.py` | Wraps coinbase-advanced-py SDK (REST + WebSocket) | -- | -- |
 | Database | `db.py` | SQLite schema, connection management | -- | -- |
 | Config | `config.py` | Pydantic settings loaded from `.env` | -- | -- |
+| PriceBuffer | `price_buffer.py` | In-memory rolling buffer of recent prices | `PriceUpdate` | -- |
+| ClaudePredictor | `claude_predictor.py` | Calls Claude API with price + news context to predict BTC targets | -- | -- |
+| NewsService | `news_service.py` | Fetches crypto news/sentiment via Grok API (xAI) | -- | -- |
+| ClaudePredictionStrategy | `strategy_claude_prediction.py` | Orchestrates prediction cycle: gathers prices + news, calls ClaudePredictor, emits OrderRequests | `PriceUpdate` | `OrderRequest` |
 | Smoke Test | `scripts/smoke_test.py` | Interactive live plumbing validation — buy/sell/hold lifecycle | -- | -- |
 
 ## Event Flow
@@ -162,3 +173,4 @@ OrderRequest arrives
 
 - **2026-02-14** -- Initial architecture: EventBus, MarketData, OrderManager, RiskManager, PositionTracker, KillSwitch, Database, Config. 48 tests.
 - **2026-02-14** -- Added interactive smoke test script (`scripts/smoke_test.py`) for live plumbing validation.
+- **2026-02-14** -- Added PriceBuffer, NewsService (Grok API), ClaudePredictor (Anthropic API), and ClaudePredictionStrategy. 69 tests.
