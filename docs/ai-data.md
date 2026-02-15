@@ -11,7 +11,7 @@ price: float        # 50123.45
 timestamp: str      # ISO 8601 from WebSocket
 ```
 Published by: MarketData._on_message
-Consumed by: (none — future strategy layer)
+Consumed by: PriceOnlyStrategy._on_price (default) or NewsPredictionStrategy._on_price
 
 ### OrderRequest
 ```
@@ -23,7 +23,7 @@ base_size: Optional[float]         # asset amount for sells and limit orders
 limit_price: Optional[float]       # required for LIMIT orders
 order_id: str = uuid4()            # auto-generated, used as client_order_id
 ```
-Published by: (external — strategy layer)
+Published by: PriceOnlyStrategy or NewsPredictionStrategy (BUY/SELL decisions)
 Consumed by: OrderManager._handle_order_request
 
 Field usage by order type:

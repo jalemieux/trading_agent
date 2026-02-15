@@ -53,10 +53,10 @@ Fix: Check account balances via coinbase.get_accounts()
 ### Order placed but OrderFilled has filled_price=0
 ```
 Symptom: OrderFilled event with filled_price=0.0 or filled_qty=0.0
-Cause: get_order() returned before fill completed, or response format changed
-Root: order_manager.py:60-62 uses .get() with default 0
-Debug: Log the raw get_order response
-Fix: Add polling/retry for order status before reading fill details
+Cause: All 5 polling attempts returned filled_size=0, or response format changed
+Root: order_manager.py:70-80 polls get_order up to 5 times with 1s delays
+Debug: Log the raw get_order response; check if order is stuck in PENDING on Coinbase
+Note: The _get() helper handles both dict and object attribute access from SDK responses
 ```
 
 ### OrderFailed on exception (no order persisted)
@@ -155,10 +155,11 @@ Caution: SQLite ALTER TABLE only supports ADD COLUMN, not DROP/RENAME
 ```
 Symptom: No PriceUpdate events after start()
 Debug checklist:
-  1. Was start(product_ids) called? (main.py does NOT call it currently)
+  1. Was start(product_ids) called? (main.py calls it at line 124 with settings.product_id)
   2. Are API keys valid? WSClient will silently fail with bad credentials
   3. Is the event loop running? _schedule_on_message checks self._loop
   4. Check for JSON parse errors in _on_message (silently returns on JSONDecodeError)
+  5. Product ID mismatch? _resolve_product_id maps by base currency (e.g., SOL-USD → SOL-USDC)
 ```
 
 ### "Event loop is not running" on stop()

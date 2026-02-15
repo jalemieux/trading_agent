@@ -33,6 +33,7 @@ Dependencies: none
 class Settings(BaseSettings):
     coinbase_api_key: str = ""
     coinbase_api_secret: str = ""
+    coinbase_key_file: str = ""
     max_order_size_usd: float = 100.0
     max_daily_loss_usd: float = 500.0
     db_path: str = "trading_bot.db"
@@ -44,6 +45,7 @@ class Settings(BaseSettings):
     grok_model: str = "grok-3-mini-fast"
     trade_threshold_pct: float = 1.0
     trade_size_usd: float = 50.0
+    product_id: str = "BTC-USD"
 ```
 
 Loads from `.env` file via pydantic-settings. Env var names are UPPER_SNAKE_CASE versions of field names.
@@ -132,7 +134,7 @@ Dependencies: Database, EventBus, KillSwitch, Settings
 
 ```
 class CoinbaseClient:
-    __init__(api_key: str, api_secret: str)
+    __init__(api_key: str = "", api_secret: str = "", key_file: str = "")
     market_buy(client_order_id, product_id, quote_size) → dict
     market_sell(client_order_id, product_id, base_size) → dict
     limit_order(client_order_id, product_id, side, base_size, limit_price) → dict
@@ -145,6 +147,8 @@ class CoinbaseClient:
 Internal state: `_client: RESTClient` from coinbase.rest
 
 Behavior:
+- If `key_file` is provided, creates `RESTClient(key_file=key_file)` (JSON key file auth)
+- Otherwise creates `RESTClient(api_key=api_key, api_secret=api_secret)` (inline key auth)
 - Thin wrapper, each method delegates directly to SDK
 - All params are strings (SDK requirement for sizes/prices)
 - Methods are synchronous (SDK is sync)
@@ -178,6 +182,9 @@ class OrderManager:
 
 Internal state: _db, _bus, _risk, _coinbase
 
+Module-level helper:
+- `_get(obj, key, default=None)` — gets value from dict (`.get()`) or object (`getattr()`). Used throughout OrderManager to handle both dict and object attribute access from SDK responses.
+
 Subscribes to: OrderRequest
 Publishes: OrderFilled, OrderFailed
 
@@ -192,7 +199,9 @@ Flow (see ai-traces.md for detailed trace):
 2. Place order via CoinbaseClient (sync call)
 3. If exception → publish OrderFailed
 4. If result.success == False → persist as FAILED, publish OrderFailed
-5. If success → get_order for fill details → persist as FILLED → publish OrderFilled
+5. If success → poll get_order up to 5 times (1s delay between) for fill details → persist as FILLED → publish OrderFilled
+
+Fill polling: Market orders may not settle immediately. The handler polls `get_order()` up to 5 times with 1-second delays, checking `filled_size > 0` before extracting fill details.
 
 Dependencies: Database, EventBus, RiskManager, CoinbaseClient
 
@@ -231,7 +240,7 @@ Dependencies: Database, EventBus
 
 ```
 class MarketData:
-    __init__(bus: EventBus, api_key: str, api_secret: str)
+    __init__(bus: EventBus, api_key: str = "", api_secret: str = "", key_file: str = "", product_ids: list[str] | None = None)
     start(product_ids: list[str]) → None  # async, opens WS, subscribes to ticker
     stop() → None                         # async, closes WS (safe if never started)
 ```
@@ -239,9 +248,14 @@ class MarketData:
 Internal state:
 - `_bus: EventBus`
 - `_loop: AbstractEventLoop | None` — set on start(), used for thread bridging
+- `_product_ids: set[str]` — subscribed product IDs, used for product ID resolution
 - `_ws: WSClient` — Coinbase WebSocket client
 
 Publishes: PriceUpdate
+
+Constructor auth:
+- If `key_file` is provided, creates `WSClient(key_file=key_file, ...)`
+- Otherwise creates `WSClient(api_key=api_key, api_secret=api_secret, ...)`
 
 Thread bridging:
 - WSClient callback runs in a separate thread
@@ -251,7 +265,13 @@ Thread bridging:
 Message parsing:
 - Only processes `channel == "ticker"` messages
 - Extracts `events[].tickers[].{product_id, price}` from JSON
+- Runs product_id through `_resolve_product_id()` before publishing
 - Publishes PriceUpdate for each ticker entry
+
+Product ID resolution (`_resolve_product_id`):
+- If raw ID is in `_product_ids`, return as-is
+- Otherwise, match by base currency (e.g., Coinbase returns "SOL-USD" but subscribed to "SOL-USDC" → maps to "SOL-USDC")
+- Falls back to raw ID if no match found
 
 Dependencies: EventBus, coinbase-advanced-py (coinbase.websocket.WSClient)
 
@@ -265,17 +285,23 @@ Initialization order:
 3. Database(settings.db_path) → await initialize()
 4. KillSwitch(db, bus) → await initialize()
 5. RiskManager(db, bus, kill_switch, settings)
-6. CoinbaseClient(settings.coinbase_api_key, settings.coinbase_api_secret)
+6. CoinbaseClient(key, secret, key_file)
 7. OrderManager(db, bus, risk_manager, coinbase) → register(bus)
 8. PositionTracker(db, bus) → register(bus)
-9. MarketData(bus, settings.coinbase_api_key, settings.coinbase_api_secret)
+9. MarketData(bus, key, secret, key_file)
+10. PriceBuffer(max_size=50)
+11. Strategy selection (conditional):
+    - If `strategy == "news"`: import NewsService, ClaudePredictor, NewsPredictionStrategy
+    - Else (default): import ClaudePriceOnlyPredictor, PriceOnlyStrategy
+12. strategy.register(bus) — subscribes to PriceUpdate
+13. await market_data.start(product_ids=[settings.product_id])
+14. await strategy.start() — launches prediction loop
 
 Shutdown:
 - SIGINT/SIGTERM → sets asyncio.Event
+- await strategy.stop()
 - await market_data.stop()
 - await db.close()
-
-Note: MarketData.start() is NOT called in main(). Products must be subscribed explicitly (strategy layer responsibility).
 
 ---
 

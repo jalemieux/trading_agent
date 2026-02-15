@@ -64,23 +64,23 @@ KillSwitchActivated — published by KillSwitch, no consumer yet
 ```
 src/
 ├── __init__.py              empty
-├── main.py:91               entry point, component wiring, signal handlers
-├── config.py:12             Settings(BaseSettings) — env vars
-├── event_bus.py:27          EventBus — subscribe/unsubscribe/publish
+├── main.py:139              entry point, component wiring, strategy selection, signal handlers
+├── config.py:25             Settings(BaseSettings) — env vars (incl. coinbase_key_file, product_id)
+├── event_bus.py:26          EventBus — subscribe/unsubscribe/publish
 ├── events.py:63             7 frozen dataclasses
-├── db.py:81                 Database — aiosqlite wrapper + schema
-├── kill_switch.py:42        KillSwitch — activate/deactivate/initialize
-├── risk_manager.py:62       RiskManager — check(order) → bool
-├── coinbase_client.py:53    CoinbaseClient — SDK wrapper
-├── order_manager.py:138     OrderManager — order lifecycle
-├── position_tracker.py:175  PositionTracker — P&L tracking
-├── market_data.py:63        MarketData — WebSocket ticker
-├── price_buffer.py:25        PriceBuffer — in-memory ring buffer per product
-├── news_service.py:39        NewsService — Grok xAI news/sentiment client
-├── claude_predictor.py:84    ClaudePredictor — Claude API predictions (news strategy)
-├── claude_price_only_predictor.py:68  ClaudePriceOnlyPredictor — Claude API price-only predictions
-├── strategy_news_prediction.py:153  NewsPredictionStrategy — timer-based AI strategy (price + news)
-└── strategy_price_only.py:148  PriceOnlyStrategy — timer-based AI strategy (price only)
+├── db.py:80                 Database — aiosqlite wrapper + schema
+├── kill_switch.py:41        KillSwitch — activate/deactivate/initialize
+├── risk_manager.py:61       RiskManager — check(order) → bool
+├── coinbase_client.py:55    CoinbaseClient — SDK wrapper (key_file or key/secret auth)
+├── order_manager.py:155     OrderManager — order lifecycle + fill polling
+├── position_tracker.py:174  PositionTracker — P&L tracking
+├── market_data.py:79        MarketData — WebSocket ticker + product ID resolution
+├── price_buffer.py:25       PriceBuffer — in-memory ring buffer per product
+├── news_service.py:41       NewsService — Grok xAI news/sentiment client
+├── claude_predictor.py:84   ClaudePredictor — Claude API predictions (news strategy)
+├── claude_price_only_predictor.py:67  ClaudePriceOnlyPredictor — Claude API price-only predictions
+├── strategy_news_prediction.py:165  NewsPredictionStrategy — timer-based AI strategy (price + news)
+└── strategy_price_only.py:154  PriceOnlyStrategy — timer-based AI strategy (price only)
 
 tests/
 ├── test_event_bus.py        5 tests

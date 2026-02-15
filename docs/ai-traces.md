@@ -24,17 +24,20 @@ Step-by-step execution paths with file:line references for every major flow.
        → coinbase_client.py:12  _client.market_order_buy(...)
        → returns {"success": True, "success_response": {"order_id": "cb-123"}}
 
-   2c. cb_order_id = "cb-123"                                   order_manager.py:55
-       self._coinbase.get_order("cb-123")                       order_manager.py:58
-       → coinbase_client.py:45  _client.get_order("cb-123")
-       → returns {"order": {"filled_size": "0.002", "average_filled_price": "50000", "total_fees": "0.20"}}
+   2c. cb_order_id = "cb-123"                                   order_manager.py:64
+       Poll for fill details (up to 5 attempts, 1s delay):      order_manager.py:70-80
+       for attempt in range(5):
+         self._coinbase.get_order("cb-123")                     order_manager.py:71
+         → coinbase_client.py:48  _client.get_order("cb-123")
+         → returns {"order": {"filled_size": "0.002", "average_filled_price": "50000", "total_fees": "0.20"}}
+         filled_qty > 0 → break
 
-   2d. filled_price=50000.0, filled_qty=0.002, fee=0.20        order_manager.py:60-62
+   2d. filled_price=50000.0, filled_qty=0.002, fee=0.20        order_manager.py:74-76
 
-   2e. await self._persist_order(order, now, coinbase_id="cb-123", ...)  order_manager.py:65
-       → INSERT INTO orders (...)                                order_manager.py:119-136
+   2e. await self._persist_order(order, now, coinbase_id="cb-123", ...)  order_manager.py:83-90
+       → INSERT INTO orders (...)                                order_manager.py:137-155
 
-   2f. await self._bus.publish(OrderFilled(...))                 order_manager.py:74
+   2f. await self._bus.publish(OrderFilled(...))                 order_manager.py:92-102
        → event_bus.py:20  dispatch to PositionTracker._handle_order_filled
 
 3. PositionTracker._handle_order_filled(event)                  position_tracker.py:20
@@ -229,21 +232,29 @@ Precondition: open position BTC-USD, entry_price=50000, qty=0.004
 ## Startup Trace (main.py)
 
 ```
-1.  Settings()                          main.py:24    loads .env
-2.  EventBus()                          main.py:25
-3.  Database(db_path)                   main.py:28
-4.  await db.initialize()               main.py:29    creates tables, seeds kill_switch
-5.  KillSwitch(db, bus)                 main.py:33
-6.  await kill_switch.initialize()      main.py:34    loads persisted state
-7.  RiskManager(db, bus, ks, settings)  main.py:39
-8.  CoinbaseClient(key, secret)         main.py:42    creates RESTClient (no network call)
-9.  OrderManager(db, bus, rm, cb)       main.py:48
-10. order_manager.register(bus)         main.py:49    subscribes to OrderRequest
-11. PositionTracker(db, bus)            main.py:52
-12. position_tracker.register(bus)      main.py:53    subscribes to OrderFilled
-13. MarketData(bus, key, secret)        main.py:56    creates WSClient (no connection yet)
-14. Signal handlers registered          main.py:74
-15. await stop_event.wait()             main.py:82    blocks until SIGINT/SIGTERM
-16. await market_data.stop()            main.py:85
-17. await db.close()                    main.py:86
+1.  Settings()                          main.py:25    loads .env
+2.  EventBus()                          main.py:26
+3.  Database(db_path)                   main.py:29
+4.  await db.initialize()               main.py:30    creates tables, seeds kill_switch
+5.  KillSwitch(db, bus)                 main.py:34
+6.  await kill_switch.initialize()      main.py:35    loads persisted state
+7.  RiskManager(db, bus, ks, settings)  main.py:40
+8.  CoinbaseClient(key, secret, key_file)  main.py:43  creates RESTClient (no network call)
+9.  OrderManager(db, bus, rm, cb)       main.py:50
+10. order_manager.register(bus)         main.py:51    subscribes to OrderRequest
+11. PositionTracker(db, bus)            main.py:54
+12. position_tracker.register(bus)      main.py:55    subscribes to OrderFilled
+13. MarketData(bus, key, secret, key_file)  main.py:58  creates WSClient (no connection yet)
+14. PriceBuffer(max_size=50)            main.py:66
+15. Strategy selection (conditional)    main.py:68-106
+    - "news" → NewsPredictionStrategy(bus, price_buffer, news_service, predictor, settings, product_id, db)
+    - else   → PriceOnlyStrategy(bus, price_buffer, predictor, settings, product_id, db)
+16. strategy.register(bus)              main.py:106   subscribes to PriceUpdate
+17. Signal handlers registered          main.py:119-121
+18. await market_data.start([product_id])  main.py:124  opens WS, subscribes to ticker
+19. await strategy.start()              main.py:125   launches prediction loop task
+20. await stop_event.wait()             main.py:129   blocks until SIGINT/SIGTERM
+21. await strategy.stop()               main.py:132
+22. await market_data.stop()            main.py:133
+23. await db.close()                    main.py:134
 ```
