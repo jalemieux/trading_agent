@@ -47,6 +47,48 @@ CREATE TABLE IF NOT EXISTS kill_switch (
 );
 
 INSERT OR IGNORE INTO kill_switch (id, active) VALUES (1, 0);
+
+CREATE TABLE IF NOT EXISTS price_history (
+    product_id TEXT NOT NULL,
+    price REAL NOT NULL,
+    timestamp TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_price_history_product_time ON price_history(product_id, timestamp);
+
+CREATE TABLE IF NOT EXISTS predictions (
+    id TEXT PRIMARY KEY,
+    product_id TEXT NOT NULL,
+    action TEXT NOT NULL,
+    predicted_price REAL,
+    current_price REAL NOT NULL,
+    confidence REAL,
+    reasoning TEXT,
+    model TEXT NOT NULL,
+    timestamp TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_predictions_time ON predictions(timestamp);
+
+CREATE TABLE IF NOT EXISTS news_history (
+    id TEXT PRIMARY KEY,
+    prediction_id TEXT NOT NULL,
+    headline TEXT NOT NULL,
+    source TEXT,
+    sentiment TEXT,
+    timestamp TEXT NOT NULL,
+    FOREIGN KEY (prediction_id) REFERENCES predictions(id)
+);
+CREATE INDEX IF NOT EXISTS idx_news_prediction ON news_history(prediction_id);
+
+CREATE TABLE IF NOT EXISTS portfolio_snapshots (
+    id TEXT PRIMARY KEY,
+    timestamp TEXT NOT NULL,
+    total_value_usd REAL NOT NULL,
+    position_value_usd REAL NOT NULL,
+    realized_pnl_cumulative REAL NOT NULL,
+    unrealized_pnl REAL NOT NULL,
+    num_open_positions INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_portfolio_time ON portfolio_snapshots(timestamp);
 """
 
 
