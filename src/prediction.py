@@ -16,14 +16,31 @@ class Prediction:
     timestamp: str
 
 
+def _extract_json(text: str) -> str:
+    """Extract the first JSON object from text, handling surrounding prose."""
+    # Strip markdown code blocks if present
+    text = re.sub(r"^```(?:json)?\s*\n?", "", text.strip())
+    text = re.sub(r"\n?```\s*$", "", text)
+
+    # Try the full text first (already clean JSON)
+    text = text.strip()
+    if text.startswith("{"):
+        return text
+
+    # Find the first { ... } block (handles preamble/postamble text)
+    match = re.search(r"\{[^{}]*\}", text)
+    if match:
+        return match.group(0)
+
+    return text
+
+
 def parse_prediction(raw: str, current_price: float) -> Prediction | None:
     """Parse an LLM response into a Prediction. Returns None on failure."""
-    # Strip markdown code blocks if present
-    stripped = re.sub(r"^```(?:json)?\s*\n?", "", raw.strip())
-    stripped = re.sub(r"\n?```\s*$", "", stripped)
+    extracted = _extract_json(raw)
 
     try:
-        data = json.loads(stripped)
+        data = json.loads(extracted)
         return Prediction(
             target_price=float(data["target_price"]),
             timeframe_minutes=int(data["timeframe_minutes"]),

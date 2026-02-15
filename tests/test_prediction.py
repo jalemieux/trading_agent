@@ -44,3 +44,19 @@ def test_parse_prediction_api_wrapper():
     result = parse_prediction(raw, current_price=100000.0)
     assert isinstance(result, Prediction)
     assert result.target_price == 105000.0
+
+
+def test_parse_prediction_surrounding_prose():
+    """Handles LLM responses with preamble/postamble text around JSON."""
+    raw = 'Based on my analysis:\n{"target_price": 86.5, "timeframe_minutes": 5, "reasoning": "bullish"}\nHope that helps!'
+    result = parse_prediction(raw, current_price=85.0)
+    assert isinstance(result, Prediction)
+    assert result.target_price == 86.5
+    assert result.reasoning == "bullish"
+
+
+def test_parse_prediction_only_prose():
+    """Returns None when response has no JSON at all."""
+    raw = "I think the price will go up to about $86 in the next few minutes."
+    result = parse_prediction(raw, current_price=85.0)
+    assert result is None

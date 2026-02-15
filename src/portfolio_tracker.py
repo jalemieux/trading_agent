@@ -69,7 +69,12 @@ class PortfolioTracker:
         for account in accounts:
             currency = getattr(account, "currency", "")
             available = getattr(account, "available_balance", None)
-            balance = float(getattr(available, "value", "0")) if available else 0.0
+            if available is None:
+                balance = 0.0
+            elif isinstance(available, dict):
+                balance = float(available.get("value", "0"))
+            else:
+                balance = float(getattr(available, "value", "0"))
             if currency == self._base_currency:
                 base_balance = balance
             elif currency == self._quote_currency:

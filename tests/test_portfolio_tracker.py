@@ -21,7 +21,7 @@ def _mock_coinbase(accounts: list[dict]) -> MagicMock:
     account_objects = [
         SimpleNamespace(
             currency=a["currency"],
-            available_balance=SimpleNamespace(**a["available_balance"]),
+            available_balance=a["available_balance"],  # SDK stores as raw dict
         )
         for a in accounts
     ]
