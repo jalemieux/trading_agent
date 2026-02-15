@@ -83,10 +83,8 @@ CREATE TABLE IF NOT EXISTS portfolio_snapshots (
     id TEXT PRIMARY KEY,
     timestamp TEXT NOT NULL,
     total_value_usd REAL NOT NULL,
-    position_value_usd REAL NOT NULL,
     realized_pnl_cumulative REAL NOT NULL,
-    unrealized_pnl REAL NOT NULL,
-    num_open_positions INTEGER NOT NULL
+    unrealized_pnl REAL NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_portfolio_time ON portfolio_snapshots(timestamp);
 """
