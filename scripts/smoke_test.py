@@ -28,7 +28,7 @@ logger = logging.getLogger("smoke_test")
 
 # --- Constants ---
 PRODUCT_ID = "SOL-USDC"
-BUY_QUOTE_USD = 1.0  # $1 worth of SOL
+TRADE_SIZE_USD = 1.0  # $1 worth of SOL
 SMOKE_DB = "smoke_test.db"
 
 # --- ANSI Colors ---
@@ -73,7 +73,8 @@ def prompt_continue() -> bool:
 
 async def run() -> None:
     print(f"\n{BOLD}{CYAN}Coinbase Trading Bot — Smoke Test{RESET}")
-    print(f"{CYAN}Product: {PRODUCT_ID} | Trade size: ${BUY_QUOTE_USD}{RESET}\n")
+    print(f"{CYAN}Product: {PRODUCT_ID} | Trade size: ${TRADE_SIZE_USD}{RESET}")
+    print(f"{CYAN}Flow: Sell SOL → verify → hold → Buy back{RESET}\n")
 
     # Load settings (override DB path and risk limits for safety)
     settings = Settings()
@@ -128,7 +129,7 @@ async def run() -> None:
 
     try:
         # --- Stage 1: Connectivity ---
-        await stage_connectivity(coinbase)
+        sol_price = await stage_connectivity(coinbase)
         if not prompt_continue():
             return
 
@@ -137,10 +138,11 @@ async def run() -> None:
         if not prompt_continue():
             return
 
-        # --- Stage 3: Buy ---
+        # --- Stage 3: Sell (SOL → USDC) ---
         filled_events.clear()
         position_events.clear()
-        await stage_buy(bus, filled_events, position_events)
+        sell_qty = round(TRADE_SIZE_USD / sol_price, 8) if sol_price else 0.0
+        await stage_sell(bus, sell_qty, filled_events, position_events)
         if not prompt_continue():
             return
 
@@ -154,11 +156,10 @@ async def run() -> None:
         if not prompt_continue():
             return
 
-        # --- Stage 6: Sell ---
+        # --- Stage 6: Buy back (USDC → SOL) ---
         filled_events.clear()
         position_events.clear()
-        buy_qty = await get_open_position_qty(db)
-        await stage_sell(bus, buy_qty, filled_events, position_events)
+        await stage_buy(bus, filled_events, position_events)
         if not prompt_continue():
             return
 
@@ -173,8 +174,10 @@ async def run() -> None:
 
 # --- Placeholder stage functions (implemented in subsequent tasks) ---
 
-async def stage_connectivity(coinbase: CoinbaseClient) -> None:
+async def stage_connectivity(coinbase: CoinbaseClient) -> float:
+    """Returns current SOL price, or 0.0 on failure."""
     header(1, "Connectivity")
+    sol_price = 0.0
 
     # Test 1: Get accounts
     info("Fetching accounts...")
@@ -190,7 +193,7 @@ async def stage_connectivity(coinbase: CoinbaseClient) -> None:
                 info(f"  {currency}: {available}")
     except Exception as e:
         fail(f"get_accounts() failed: {e}")
-        return
+        return sol_price
 
     # Test 2: Get product info
     info(f"Fetching product info for {PRODUCT_ID}...")
@@ -202,8 +205,11 @@ async def stage_connectivity(coinbase: CoinbaseClient) -> None:
         quote_min = getattr(product, "quote_min_size", "?")
         ok(f"{PRODUCT_ID} — price: ${price}, status: {status}")
         info(f"  min base: {base_min}, min quote: {quote_min}")
+        sol_price = float(price)
     except Exception as e:
         fail(f"get_product() failed: {e}")
+
+    return sol_price
 
 async def stage_market_data(market_data: MarketData, bus: EventBus) -> None:
     header(2, "Market Data (WebSocket)")
@@ -246,16 +252,16 @@ async def stage_buy(
     filled: list[OrderFilled],
     positions: list[PositionChanged],
 ) -> None:
-    header(3, "Buy")
+    header(6, "Buy Back (USDC → SOL)")
 
-    info(f"Placing market buy: ${BUY_QUOTE_USD} of {PRODUCT_ID}")
-    warn(f"This will spend real money (${BUY_QUOTE_USD})")
+    info(f"Placing market buy: ${TRADE_SIZE_USD} of {PRODUCT_ID}")
+    warn("This will spend USDC from the earlier sell")
 
     order = OrderRequest(
         product_id=PRODUCT_ID,
         side="BUY",
         order_type="MARKET",
-        quote_size=BUY_QUOTE_USD,
+        quote_size=TRADE_SIZE_USD,
     )
     info(f"Order ID: {order.order_id}")
 
@@ -266,15 +272,15 @@ async def stage_buy(
 
     if filled:
         f = filled[0]
-        ok(f"Order filled: {f.filled_qty} SOL @ ${f.filled_price:.4f}")
+        ok(f"Buy filled: {f.filled_qty} SOL @ ${f.filled_price:.4f}")
         info(f"  Fee: ${f.fee:.6f}")
         info(f"  Coinbase order ID: {f.coinbase_order_id}")
     else:
         fail("No OrderFilled event received — check logs above for errors")
 
     if positions:
-        p = positions[0]
-        ok(f"Position opened: {p.quantity} SOL, entry ${p.entry_price:.4f}, status={p.status}")
+        p = positions[-1]
+        ok(f"Position status: {p.status} (qty={p.quantity})")
     else:
         warn("No PositionChanged event received")
 
@@ -338,14 +344,14 @@ async def stage_sell(
     filled: list[OrderFilled],
     positions: list[PositionChanged],
 ) -> None:
-    header(6, "Sell")
+    header(3, "Sell (SOL → USDC)")
 
     if qty <= 0:
-        fail("No position to sell — skipping")
+        fail("Could not compute sell quantity — skipping")
         return
 
-    info(f"Placing market sell: {qty} SOL of {PRODUCT_ID}")
-    warn("This will sell real assets")
+    info(f"Placing market sell: {qty} SOL of {PRODUCT_ID} (≈${TRADE_SIZE_USD})")
+    warn("This will sell real SOL")
 
     order = OrderRequest(
         product_id=PRODUCT_ID,
@@ -369,8 +375,8 @@ async def stage_sell(
         fail("No OrderFilled event received for sell — check logs")
 
     if positions:
-        p = positions[-1]
-        ok(f"Position status: {p.status} (qty={p.quantity})")
+        p = positions[0]
+        ok(f"Position opened: {p.quantity} SOL, entry ${p.entry_price:.4f}, status={p.status}")
     else:
         warn("No PositionChanged event received")
 
