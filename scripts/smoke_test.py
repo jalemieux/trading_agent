@@ -238,8 +238,42 @@ async def stage_market_data(market_data: MarketData, bus: EventBus) -> None:
     await market_data.stop()
     ok("WebSocket closed")
 
-async def stage_buy(bus: EventBus, filled: list, positions: list) -> None:
-    pass
+async def stage_buy(
+    bus: EventBus,
+    filled: list[OrderFilled],
+    positions: list[PositionChanged],
+) -> None:
+    header(3, "Buy")
+
+    info(f"Placing market buy: ${BUY_QUOTE_USD} of {PRODUCT_ID}")
+    warn(f"This will spend real money (${BUY_QUOTE_USD})")
+
+    order = OrderRequest(
+        product_id=PRODUCT_ID,
+        side="BUY",
+        order_type="MARKET",
+        quote_size=BUY_QUOTE_USD,
+    )
+    info(f"Order ID: {order.order_id}")
+
+    await bus.publish(order)
+
+    # Wait briefly for event propagation
+    await asyncio.sleep(2.0)
+
+    if filled:
+        f = filled[0]
+        ok(f"Order filled: {f.filled_qty} SOL @ ${f.filled_price:.4f}")
+        info(f"  Fee: ${f.fee:.6f}")
+        info(f"  Coinbase order ID: {f.coinbase_order_id}")
+    else:
+        fail("No OrderFilled event received — check logs above for errors")
+
+    if positions:
+        p = positions[0]
+        ok(f"Position opened: {p.quantity} SOL, entry ${p.entry_price:.4f}, status={p.status}")
+    else:
+        warn("No PositionChanged event received")
 
 async def stage_verify_position(db: Database) -> None:
     pass
