@@ -372,7 +372,49 @@ async def stage_sell(
         warn("No PositionChanged event received")
 
 async def stage_summary(db: Database) -> None:
-    pass
+    header(7, "Summary")
+
+    # Position final state
+    row = await db.execute_fetchone(
+        "SELECT entry_price, quantity, status, realized_pnl FROM positions WHERE product_id = ? ORDER BY opened_at DESC LIMIT 1",
+        (PRODUCT_ID,),
+    )
+    if row:
+        entry, qty, status, pnl = row
+        info(f"Position: {status}")
+        info(f"  Entry price:  ${entry:.4f}")
+        info(f"  Final qty:    {qty}")
+        pnl = pnl or 0.0
+        color = GREEN if pnl >= 0 else RED
+        print(f"  {color}{BOLD}  Realized P&L: ${pnl:.6f}{RESET}")
+
+    # Daily summary
+    from datetime import date
+    today = date.today().isoformat()
+    daily = await db.execute_fetchone(
+        "SELECT total_pnl, num_trades, fees_paid FROM daily_summary WHERE date = ?",
+        (today,),
+    )
+    if daily:
+        total_pnl, trades, fees = daily
+        info(f"Daily summary ({today}):")
+        info(f"  Trades:    {trades}")
+        info(f"  Total P&L: ${total_pnl:.6f}")
+        info(f"  Fees paid: ${fees:.6f}")
+    else:
+        info("No daily summary yet (position may not have been closed)")
+
+    # All orders
+    orders = await db.execute_fetchall(
+        "SELECT side, status, filled_price, filled_qty, fee FROM orders WHERE product_id = ? ORDER BY created_at",
+        (PRODUCT_ID,),
+    )
+    if orders:
+        info(f"Orders ({len(orders)} total):")
+        for o in orders:
+            info(f"  {o[0]} | {o[1]} | price=${o[2]:.4f} | qty={o[3]} | fee=${o[4]:.6f}")
+
+    ok("Smoke test complete — all plumbing validated")
 
 
 if __name__ == "__main__":
