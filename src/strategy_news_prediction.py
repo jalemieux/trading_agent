@@ -3,7 +3,7 @@ import logging
 import uuid
 from datetime import datetime, timezone
 
-from src.claude_predictor import ClaudePredictor, Prediction
+from src.prediction import Prediction, Predictor
 from src.config import Settings
 from src.db import Database
 from src.event_bus import EventBus
@@ -20,7 +20,7 @@ class NewsPredictionStrategy:
         bus: EventBus,
         price_buffer: PriceBuffer,
         news_service: NewsService,
-        predictor: ClaudePredictor,
+        predictor: Predictor,
         settings: Settings,
         product_id: str = "BTC-USD",
         db: Database | None = None,

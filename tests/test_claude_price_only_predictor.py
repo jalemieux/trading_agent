@@ -2,20 +2,20 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from src.claude_predictor import Prediction
+from src.claude_price_only_predictor import ClaudePriceOnlyPredictor
 from src.events import PriceUpdate
+from src.prediction import Prediction
 
 
 @pytest.fixture
-def mock_anthropic_client():
+def mock_llm_client():
     client = MagicMock()
-    response = MagicMock()
-    response.content = [MagicMock()]
-    response.content[0].text = (
-        '{"target_price": 105000.0, "timeframe_minutes": 60, '
-        '"reasoning": "Strong upward momentum in price action"}'
+    client.complete = AsyncMock(
+        return_value=(
+            '{"target_price": 105000.0, "timeframe_minutes": 60, '
+            '"reasoning": "Strong upward momentum in price action"}'
+        )
     )
-    client.messages.create = AsyncMock(return_value=response)
     return client
 
 
@@ -28,11 +28,8 @@ def prices():
     ]
 
 
-async def test_predict_returns_prediction(mock_anthropic_client, prices):
-    from src.claude_price_only_predictor import ClaudePriceOnlyPredictor
-
-    predictor = ClaudePriceOnlyPredictor(api_key="test-key")
-    predictor._client = mock_anthropic_client
+async def test_predict_returns_prediction(mock_llm_client, prices):
+    predictor = ClaudePriceOnlyPredictor(client=mock_llm_client)
 
     result = await predictor.predict(prices)
 
@@ -43,49 +40,37 @@ async def test_predict_returns_prediction(mock_anthropic_client, prices):
     assert result.current_price == 101000.0
 
 
-async def test_predict_prompt_contains_prices_no_news(mock_anthropic_client, prices):
-    from src.claude_price_only_predictor import ClaudePriceOnlyPredictor
-
-    predictor = ClaudePriceOnlyPredictor(api_key="test-key")
-    predictor._client = mock_anthropic_client
+async def test_predict_calls_client_complete(mock_llm_client, prices):
+    predictor = ClaudePriceOnlyPredictor(client=mock_llm_client)
 
     await predictor.predict(prices)
 
-    call_kwargs = mock_anthropic_client.messages.create.call_args
-    user_msg = call_kwargs.kwargs["messages"][-1]["content"]
-    system_msg = call_kwargs.kwargs["system"]
-    assert "100000.0" in user_msg
-    assert "101000.0" in user_msg
-    assert "news" not in user_msg.lower()
-    assert "headline" not in user_msg.lower()
-    assert "news" not in system_msg.lower()
+    mock_llm_client.complete.assert_called_once()
+    call_kwargs = mock_llm_client.complete.call_args.kwargs
+    assert "100000.0" in call_kwargs["user"]
+    assert "101000.0" in call_kwargs["user"]
+    assert "news" not in call_kwargs["user"].lower()
+    assert "headline" not in call_kwargs["user"].lower()
+    assert "news" not in call_kwargs["system"].lower()
 
 
-async def test_predict_empty_prices():
-    from src.claude_price_only_predictor import ClaudePriceOnlyPredictor
-
-    predictor = ClaudePriceOnlyPredictor(api_key="test-key")
+async def test_predict_empty_prices(mock_llm_client):
+    predictor = ClaudePriceOnlyPredictor(client=mock_llm_client)
     result = await predictor.predict([])
     assert result is None
 
 
-async def test_predict_api_error(mock_anthropic_client, prices):
-    from src.claude_price_only_predictor import ClaudePriceOnlyPredictor
-
-    mock_anthropic_client.messages.create = AsyncMock(side_effect=Exception("API error"))
-    predictor = ClaudePriceOnlyPredictor(api_key="test-key")
-    predictor._client = mock_anthropic_client
+async def test_predict_api_error(mock_llm_client, prices):
+    mock_llm_client.complete = AsyncMock(side_effect=Exception("API error"))
+    predictor = ClaudePriceOnlyPredictor(client=mock_llm_client)
 
     result = await predictor.predict(prices)
     assert result is None
 
 
-async def test_predict_malformed_json(mock_anthropic_client, prices):
-    from src.claude_price_only_predictor import ClaudePriceOnlyPredictor
-
-    mock_anthropic_client.messages.create.return_value.content[0].text = "not json"
-    predictor = ClaudePriceOnlyPredictor(api_key="test-key")
-    predictor._client = mock_anthropic_client
+async def test_predict_malformed_json(mock_llm_client, prices):
+    mock_llm_client.complete = AsyncMock(return_value="not json")
+    predictor = ClaudePriceOnlyPredictor(client=mock_llm_client)
 
     result = await predictor.predict(prices)
     assert result is None
