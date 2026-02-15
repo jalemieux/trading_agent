@@ -9,8 +9,8 @@ from src.prediction import Prediction
 logger = logging.getLogger(__name__)
 
 SYSTEM_PROMPT = (
-    "You are a crypto price prediction analyst. Analyze the provided "
-    "price history and news to predict the short-term price target. "
+    "You are a quantitative crypto analyst. Given price history and recent news, "
+    "predict the short-term price target.\n"
     "Respond ONLY with valid JSON in this exact format:\n"
     '{"target_price": <float>, "timeframe_minutes": <int>, '
     '"reasoning": "<brief explanation>"}\n'
@@ -18,7 +18,7 @@ SYSTEM_PROMPT = (
 )
 
 
-class ClaudePredictor:
+class KimiPredictor:
     def __init__(self, client: LLMClient) -> None:
         self._client = client
 
@@ -46,10 +46,10 @@ class ClaudePredictor:
                 timestamp=datetime.now(timezone.utc).isoformat(),
             )
         except (json.JSONDecodeError, KeyError, TypeError):
-            logger.exception("Failed to parse Claude prediction response")
+            logger.exception("Failed to parse Kimi prediction response")
             return None
         except Exception:
-            logger.exception("Claude prediction API call failed")
+            logger.exception("Kimi prediction API call failed")
             return None
 
     def _build_prompt(
@@ -65,9 +65,9 @@ class ClaudePredictor:
         )
 
         return (
-            f"Product: {prices[0].product_id}\n\n"
-            f"Recent price history:\n{price_lines}\n\n"
-            f"Current price: ${prices[-1].price}\n\n"
-            f"Recent news and sentiment:\n{headline_lines}\n\n"
-            "Based on this data, predict the short-term price target."
+            f"Asset: {prices[0].product_id}\n\n"
+            f"Price history (recent):\n{price_lines}\n\n"
+            f"Latest price: ${prices[-1].price}\n\n"
+            f"News headlines:\n{headline_lines}\n\n"
+            "Predict the price target for the next short-term window."
         )

@@ -13,6 +13,7 @@ from src.order_manager import OrderManager
 from src.portfolio_tracker import PortfolioTracker
 from src.position_tracker import PositionTracker
 from src.risk_manager import RiskManager
+from src.llm_client import AnthropicLLMClient, OpenAICompatibleLLMClient
 from src.price_buffer import PriceBuffer
 
 logging.basicConfig(
@@ -76,18 +77,33 @@ async def main() -> None:
     # Strategy selection
     price_buffer = PriceBuffer(max_size=50)
 
+    # Build LLM client based on predictor_type
+    if settings.predictor_type == "kimi":
+        llm_client = OpenAICompatibleLLMClient(
+            api_key=settings.openrouter_api_key,
+            model=settings.openrouter_model,
+            base_url=settings.openrouter_base_url,
+        )
+    else:
+        llm_client = AnthropicLLMClient(
+            api_key=settings.anthropic_api_key,
+            model=settings.prediction_model,
+        )
+
     if settings.strategy == "news":
         from src.news_service import NewsService
-        from src.claude_predictor import ClaudePredictor
         from src.strategy_news_prediction import NewsPredictionStrategy
+
+        if settings.predictor_type == "kimi":
+            from src.kimi_predictor import KimiPredictor
+            predictor = KimiPredictor(client=llm_client)
+        else:
+            from src.claude_predictor import ClaudePredictor
+            predictor = ClaudePredictor(client=llm_client)
 
         news_service = NewsService(
             api_key=settings.grok_api_key,
             model=settings.grok_model,
-        )
-        predictor = ClaudePredictor(
-            api_key=settings.anthropic_api_key,
-            model=settings.prediction_model,
         )
         strategy = NewsPredictionStrategy(
             bus=bus,
@@ -102,10 +118,7 @@ async def main() -> None:
         from src.claude_price_only_predictor import ClaudePriceOnlyPredictor
         from src.strategy_price_only import PriceOnlyStrategy
 
-        predictor = ClaudePriceOnlyPredictor(
-            api_key=settings.anthropic_api_key,
-            model=settings.prediction_model,
-        )
+        predictor = ClaudePriceOnlyPredictor(client=llm_client)
         strategy = PriceOnlyStrategy(
             bus=bus,
             price_buffer=price_buffer,

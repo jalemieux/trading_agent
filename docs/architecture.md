@@ -21,17 +21,24 @@ Reference: [Design Document](plans/2026-02-14-coinbase-trading-bot-design.md)
                                   └──────┬───────┘ └───┬──────────┘│
                                          │             │           │
                                     ┌────▼──┐    ┌────▼──┬───▼───┐│
-                                    │Price  │    │Price  │Claude ││
-                                    │Only   │    │Buffer │Predict││
+                                    │Price  │    │Price  │Predict││
+                                    │Only   │    │Buffer │(any)  ││
                                     │Predict│    │       │+ News ││
-                                    └───────┘    └───────┴───────┘│
-    │         │                    │               │
-    └─────────┴────────────────────┴───────────────┘
-              │
-     ┌────────▼────────┐       ┌──────────┐       ┌──────────────┐
-     │ Coinbase Client  │       │  SQLite   │◄──────│ Next.js UI   │
-     │ (SDK wrapper)    │       │    DB     │       │ (read-only)  │
-     └──────────────────┘       └──────────┘       └──────────────┘
+                                    └───┬───┘    └───────┴───┬───┘│
+    │         │                    │    │             │       │
+    └─────────┴────────────────────┘    │             │       │
+              │                    ┌────▼─────────────▼───┐   │
+     ┌────────▼────────┐           │      LLMClient       │   │
+     │ Coinbase Client  │           │  ┌───────┐ ┌───────┐│   │
+     │ (SDK wrapper)    │           │  │Anthro-│ │OpenAI ││   │
+     └──────────────────┘           │  │pic    │ │Compat ││   │
+                                    │  └───────┘ └───────┘│   │
+     ┌──────────────┐               └─────────────────────┘   │
+     │ Next.js UI   │                                         │
+     │ (read-only)  │──────►┌──────────┐◄─────────────────────┘
+     └──────────────┘       │  SQLite   │
+                            │    DB     │
+                            └──────────┘
 ```
 
 ## Components
@@ -48,11 +55,14 @@ Reference: [Design Document](plans/2026-02-14-coinbase-trading-bot-design.md)
 | Database | `db.py` | SQLite schema, connection management | -- | -- |
 | Config | `config.py` | Pydantic settings loaded from `.env` | -- | -- |
 | PriceBuffer | `price_buffer.py` | In-memory rolling buffer of recent prices | `PriceUpdate` | -- |
-| ClaudePredictor | `claude_predictor.py` | Calls Claude API with price + news context to predict BTC targets | -- | -- |
+| Prediction / Predictor | `prediction.py` | Shared prediction dataclass and protocol for all predictors | -- | -- |
+| LLMClient | `llm_client.py` | Transport-level LLM abstraction (Anthropic + OpenAI-compatible) | -- | -- |
+| ClaudePredictor | `claude_predictor.py` | Predicts BTC targets via LLMClient (price + news context) | -- | -- |
+| KimiPredictor | `kimi_predictor.py` | Predicts BTC targets via LLMClient/OpenRouter (price + news context) | -- | -- |
 | NewsService | `news_service.py` | Fetches crypto news/sentiment via Grok API (xAI) | -- | -- |
-| NewsPredictionStrategy | `strategy_news_prediction.py` | Orchestrates prediction cycle: gathers prices + news, calls ClaudePredictor, emits OrderRequests | `PriceUpdate` | `OrderRequest` |
+| NewsPredictionStrategy | `strategy_news_prediction.py` | Orchestrates prediction cycle: gathers prices + news, calls any Predictor, emits OrderRequests | `PriceUpdate` | `OrderRequest` |
 | PriceOnlyStrategy | `strategy_price_only.py` | Orchestrates prediction cycle: uses price history only (no news), calls ClaudePriceOnlyPredictor, emits OrderRequests | `PriceUpdate` | `OrderRequest` |
-| ClaudePriceOnlyPredictor | `claude_price_only_predictor.py` | Calls Claude API with price history only (no news) to predict BTC targets | -- | -- |
+| ClaudePriceOnlyPredictor | `claude_price_only_predictor.py` | Predicts BTC targets via LLMClient using price history only (no news) | -- | -- |
 | PortfolioTracker | `portfolio_tracker.py` | Periodic snapshots of portfolio value, P&L, and positions | -- | -- |
 | Smoke Test | `scripts/smoke_test.py` | Interactive live plumbing validation — buy/sell/hold lifecycle | -- | -- |
 | Dashboard UI | `ui/` | Next.js TypeScript dashboard — reads SQLite DB read-only, 6 pages | -- | -- |
@@ -233,3 +243,4 @@ OrderRequest arrives
 - **2026-02-15** -- Added `coinbase_key_file` and `product_id` config fields. CoinbaseClient and MarketData support key file auth. MarketData resolves product IDs by base currency. OrderManager polls for fill details (5 attempts). Fixed risk pipeline check order in docs.
 - **2026-02-15** -- Added 4 new DB tables (price_history, predictions, news_history, portfolio_snapshots), PortfolioTracker component, price tick persistence in MarketData, prediction/news logging, and Next.js dashboard UI with 6 pages.
 - **2026-02-15** -- PortfolioTracker now sources total_value_usd from Coinbase account balances via get_accounts() instead of computing from local positions. Removed dead columns position_value_usd and num_open_positions from portfolio_snapshots schema and TS types. 89 tests.
+- **2026-02-15** -- Added LLM client abstraction layer (`LLMClient` protocol with `AnthropicLLMClient` and `OpenAICompatibleLLMClient`), shared `Prediction` dataclass and `Predictor` protocol, `KimiPredictor` for OpenRouter-based predictions, and predictor factory in `main.py`. All predictors now use constructor-injected `LLMClient` instead of raw API keys. Config gains `PREDICTOR_TYPE`, `OPENROUTER_API_KEY`, `OPENROUTER_MODEL`, `OPENROUTER_BASE_URL`. 103 tests.

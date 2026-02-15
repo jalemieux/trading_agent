@@ -14,10 +14,10 @@ Built with Python 3.12+, asyncio, and the official Coinbase SDK.
 - **Kill switch** -- emergency halt persisted across restarts
 - **Event-driven architecture** -- all components communicate via async pub/sub
 - **SQLite persistence** for positions, orders, and daily summaries
-- **Claude-powered price prediction** — uses Claude Opus 4.6 to predict BTC price targets
+- **Multi-model price prediction** — swappable LLM backend: Claude (Anthropic) or Kimi (OpenRouter), configurable via env var
 - **Two strategy modes** — `price_only` (technical analysis only) or `news` (price + news sentiment)
 - **Real-time crypto news** — fetches news/sentiment via Grok API (xAI) (news strategy)
-- **Configurable trading** — adjustable prediction interval, trade threshold, size, and strategy
+- **Configurable trading** — adjustable prediction interval, trade threshold, size, strategy, and predictor model
 - **Trading dashboard** — Next.js web UI with portfolio equity curve, price charts, positions/orders tables, and prediction log
 
 ## Setup
@@ -67,6 +67,10 @@ DB_PATH=trading_bot.db
 | `TRADE_SIZE_USD` | USD amount per trade | `50.0` |
 | `PRODUCT_ID` | Trading pair to monitor and trade | `BTC-USD` |
 | `STRATEGY` | Strategy mode: `price_only` or `news` | `price_only` |
+| `PREDICTOR_TYPE` | Predictor backend: `claude` or `kimi` | `claude` |
+| `OPENROUTER_API_KEY` | OpenRouter API key (for Kimi predictor) | `""` |
+| `OPENROUTER_MODEL` | OpenRouter model ID | `moonshotai/kimi-k2` |
+| `OPENROUTER_BASE_URL` | OpenRouter API base URL | `https://openrouter.ai/api/v1` |
 
 ### 3. Run
 
@@ -148,11 +152,10 @@ All components are independent nodes connected through an async `EventBus`. See 
     │         │                    │   │Strategy │ │Strategy  │
     └─────────┴────────────────────┘   └────┬────┘ └────┬─────┘
               │                             │           │
-     ┌────────▼────────┐              ┌─────▼───┐  ┌───▼──────┐
-     │ Coinbase Client  │              │Claude   │  │Claude    │
-     │ (SDK wrapper)    │              │PriceOnly│  │Predictor │
-     └──────────────────┘              │Predictor│  │+ News Svc│
-                                       └─────────┘  └──────────┘
+     ┌────────▼────────┐              ┌─────▼───────────▼──┐
+     │ Coinbase Client  │              │  LLMClient Protocol │
+     │ (SDK wrapper)    │              │  (Anthropic|OpenAI) │
+     └──────────────────┘              └────────────────────┘
 ```
 
 ## Risk Controls

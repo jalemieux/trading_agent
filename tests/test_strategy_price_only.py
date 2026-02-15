@@ -2,7 +2,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from src.claude_predictor import Prediction
+from src.prediction import Prediction
 from src.event_bus import EventBus
 from src.events import OrderRequest, PriceUpdate
 from src.price_buffer import PriceBuffer
