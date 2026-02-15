@@ -55,5 +55,8 @@ class MarketData:
         logger.info("Subscribed to ticker for %s", product_ids)
 
     async def stop(self) -> None:
-        self._ws.close()
+        try:
+            self._ws.close()
+        except Exception:
+            pass
         logger.info("WebSocket closed")
