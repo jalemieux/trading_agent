@@ -63,6 +63,7 @@ async def main() -> None:
         api_key=settings.coinbase_api_key,
         api_secret=settings.coinbase_api_secret,
         key_file=settings.coinbase_key_file,
+        db=db,
     )
 
     # Claude prediction strategy
