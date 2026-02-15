@@ -35,12 +35,13 @@ class PriceOnlyStrategy(Strategy):
             raw = await self._llm_client.complete(
                 system=SYSTEM_PROMPT,
                 user=prompt,
-                max_tokens=512,
+                max_tokens=4096,
             )
         except Exception:
             logger.exception("LLM API call failed")
             return None
 
+        logger.debug("LLM raw response (%d chars): %s", len(raw), raw[:500])
         return parse_prediction(raw, current_price)
 
     def _build_prompt(self, prices) -> str:

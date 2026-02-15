@@ -48,6 +48,9 @@ def parse_prediction(raw: str, current_price: float) -> Prediction | None:
             current_price=current_price,
             timestamp=datetime.now(timezone.utc).isoformat(),
         )
-    except (json.JSONDecodeError, KeyError, TypeError, ValueError):
-        logger.warning("Failed to parse prediction response: %s", raw[:200])
+    except (json.JSONDecodeError, KeyError, TypeError, ValueError) as e:
+        logger.warning(
+            "Failed to parse prediction response (%s: %s)\n  raw (%d chars): %r\n  extracted: %r",
+            type(e).__name__, e, len(raw), raw[:500], extracted[:500],
+        )
         return None
