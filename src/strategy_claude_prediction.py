@@ -88,6 +88,10 @@ class ClaudePredictionStrategy:
         await self._evaluate(prediction)
 
     async def _evaluate(self, prediction: Prediction) -> None:
+        if prediction.current_price <= 0:
+            logger.warning("Invalid current price %.2f, skipping", prediction.current_price)
+            return
+
         diff_pct = (
             (prediction.target_price - prediction.current_price)
             / prediction.current_price
@@ -115,6 +119,9 @@ class ClaudePredictionStrategy:
                 logger.info("Bearish (%.1f%%) but no position to sell, holding", diff_pct)
                 return
             qty = await self._get_position_quantity()
+            if qty <= 0:
+                logger.warning("Position quantity is zero, skipping SELL")
+                return
             logger.info("Bearish signal (%.1f%%), placing SELL for %.6f", diff_pct, qty)
             await self._bus.publish(OrderRequest(
                 product_id=self._product_id,
