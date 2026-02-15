@@ -172,7 +172,35 @@ async def run() -> None:
 # --- Placeholder stage functions (implemented in subsequent tasks) ---
 
 async def stage_connectivity(coinbase: CoinbaseClient) -> None:
-    pass
+    header(1, "Connectivity")
+
+    # Test 1: Get accounts
+    info("Fetching accounts...")
+    try:
+        accounts_resp = coinbase.get_accounts()
+        accounts = accounts_resp.get("accounts", [])
+        ok(f"Connected — {len(accounts)} account(s) found")
+        for acct in accounts:
+            currency = acct.get("currency", "?")
+            available = acct.get("available_balance", {}).get("value", "0")
+            if float(available) > 0:
+                info(f"  {currency}: {available}")
+    except Exception as e:
+        fail(f"get_accounts() failed: {e}")
+        return
+
+    # Test 2: Get product info
+    info(f"Fetching product info for {PRODUCT_ID}...")
+    try:
+        product = coinbase.get_product(PRODUCT_ID)
+        price = product.get("price", "?")
+        status = product.get("status", "?")
+        base_min = product.get("base_min_size", "?")
+        quote_min = product.get("quote_min_size", "?")
+        ok(f"{PRODUCT_ID} — price: ${price}, status: {status}")
+        info(f"  min base: {base_min}, min quote: {quote_min}")
+    except Exception as e:
+        fail(f"get_product() failed: {e}")
 
 async def stage_market_data(market_data: MarketData, bus: EventBus) -> None:
     pass
