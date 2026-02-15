@@ -77,7 +77,7 @@ export default function PricesPage() {
             <Tooltip
               contentStyle={{ backgroundColor: "#18181b", border: "1px solid #3f3f46" }}
               labelFormatter={(t) => new Date(t).toLocaleString()}
-              formatter={(v: number, name: string) => [`$${v.toLocaleString()}`, name]}
+              formatter={(v, name) => [`$${Number(v).toLocaleString()}`, name]}
             />
             <Line type="monotone" dataKey="price" stroke="#a1a1aa" dot={false} strokeWidth={1.5} />
             <Scatter dataKey="buy" fill="#22c55e" shape="triangle" />

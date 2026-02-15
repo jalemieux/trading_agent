@@ -83,7 +83,7 @@ export default function PortfolioPage() {
             <Tooltip
               contentStyle={{ backgroundColor: "#18181b", border: "1px solid #3f3f46" }}
               labelFormatter={(t) => new Date(t).toLocaleString()}
-              formatter={(v: number) => [`$${v.toFixed(2)}`, "Value"]}
+              formatter={(v) => [`$${Number(v).toFixed(2)}`, "Value"]}
             />
             <Line type="monotone" dataKey="total_value_usd" stroke="#22c55e" dot={false} strokeWidth={2} />
           </LineChart>
