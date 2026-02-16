@@ -6,6 +6,7 @@ from src.coinbase_client import CoinbaseClient
 from src.db import Database
 from src.event_bus import EventBus
 from src.events import OrderFailed, OrderFilled, OrderRequest
+from src.portfolio_tracker import PortfolioTracker
 from src.risk_manager import RiskManager
 
 logger = logging.getLogger(__name__)
@@ -25,11 +26,13 @@ class OrderManager:
         bus: EventBus,
         risk_manager: RiskManager,
         coinbase: CoinbaseClient,
+        portfolio_tracker: PortfolioTracker,
     ) -> None:
         self._db = db
         self._bus = bus
         self._risk = risk_manager
         self._coinbase = coinbase
+        self._portfolio_tracker = portfolio_tracker
 
     def register(self, bus: EventBus) -> None:
         bus.subscribe(OrderRequest, self._handle_order_request)
@@ -42,10 +45,27 @@ class OrderManager:
 
         now = datetime.now(timezone.utc).isoformat()
 
+        # Balance pre-flight check (buys only)
+        effective_quote_size = order.quote_size
+        if order.side == "BUY" and order.quote_size is not None:
+            available = self._portfolio_tracker.quote_balance
+            if available < 1.0:
+                reason = f"Insufficient balance: ${available:.2f} available (minimum $1.00)"
+                logger.warning("Order SKIPPED: BUY %s — %s", order.product_id, reason)
+                await self._persist_order(order, now, status="FAILED")
+                await self._bus.publish(OrderFailed(order_id=order.order_id, reason=reason))
+                return
+            if available < order.quote_size:
+                logger.info(
+                    "Order sized down: $%.2f → $%.2f (available balance)",
+                    order.quote_size, available,
+                )
+                effective_quote_size = available
+
         # Place order
         try:
             if order.order_type == "MARKET":
-                result = self._place_market_order(order)
+                result = self._place_market_order(order, effective_quote_size)
             else:
                 result = self._place_limit_order(order)
         except Exception as e:
@@ -105,12 +125,12 @@ class OrderManager:
             )
         )
 
-    def _place_market_order(self, order: OrderRequest) -> dict:
+    def _place_market_order(self, order: OrderRequest, effective_quote_size: float | None = None) -> dict:
         if order.side == "BUY":
             return self._coinbase.market_buy(
                 client_order_id=order.order_id,
                 product_id=order.product_id,
-                quote_size=str(order.quote_size),
+                quote_size=str(effective_quote_size if effective_quote_size is not None else order.quote_size),
             )
         else:
             return self._coinbase.market_sell(
