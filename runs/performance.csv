@@ -5,3 +5,4 @@ timestamp,strategy,llm_provider,model,product_id,daily_pnl,unrealized_pnl,num_tr
 2026-02-16T01:05:28.917288+00:00,price_only,groq,openai/gpt-oss-120b,SOL-USDC,0.0,0.0,0,0.0,192.63844129195198,0
 2026-02-16T02:05:29.918539+00:00,price_only,groq,openai/gpt-oss-120b,SOL-USDC,0.0,0.0,0,0.0,192.13275130550196,0
 2026-02-16T02:13:28.292715+00:00,price_only,openrouter,moonshotai/kimi-k2.5,SOL-USDC,0.0,0.0,0,0.0,192.00083217860197,0
+2026-02-16T02:46:51.779061+00:00,price_only,openrouter,moonshotai/kimi-k2.5,SOL-USDC,0.0,0.0,0,0.0,0.0,0
