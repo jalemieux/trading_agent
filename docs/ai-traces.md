@@ -18,26 +18,32 @@ Step-by-step execution paths with file:line references for every major flow.
        → risk_manager.py:51  order.side=="BUY", quote_size=100 <= max=100? → OK
        → returns True
 
-   2b. self._place_market_order(order)                          order_manager.py:40
-       → order_manager.py:87  order.side=="BUY"
-       → order_manager.py:88  coinbase.market_buy(client_order_id=order.order_id, product_id="BTC-USD", quote_size="100.0")
+   2b. Balance pre-flight check (BUY only)                       order_manager.py:46-58
+       → self._portfolio_tracker.quote_balance                   order_manager.py:48
+       → available >= 1.0? → YES (proceed)
+       → available >= order.quote_size? → YES (no size-down needed)
+       → effective_quote_size = order.quote_size
+
+   2c. self._place_market_order(order, effective_quote_size)     order_manager.py:61
+       → order_manager.py:108  order.side=="BUY"
+       → order_manager.py:109  coinbase.market_buy(client_order_id=order.order_id, product_id="BTC-USD", quote_size="100.0")
        → coinbase_client.py:12  _client.market_order_buy(...)
        → returns {"success": True, "success_response": {"order_id": "cb-123"}}
 
-   2c. cb_order_id = "cb-123"                                   order_manager.py:64
-       Poll for fill details (up to 5 attempts, 1s delay):      order_manager.py:70-80
+   2d. cb_order_id = "cb-123"                                   order_manager.py:85
+       Poll for fill details (up to 5 attempts, 1s delay):      order_manager.py:91-101
        for attempt in range(5):
          self._coinbase.get_order("cb-123")                     order_manager.py:71
          → coinbase_client.py:48  _client.get_order("cb-123")
          → returns {"order": {"filled_size": "0.002", "average_filled_price": "50000", "total_fees": "0.20"}}
          filled_qty > 0 → break
 
-   2d. filled_price=50000.0, filled_qty=0.002, fee=0.20        order_manager.py:74-76
+   2e. filled_price=50000.0, filled_qty=0.002, fee=0.20
 
-   2e. await self._persist_order(order, now, coinbase_id="cb-123", ...)  order_manager.py:83-90
-       → INSERT INTO orders (...)                                order_manager.py:137-155
+   2f. await self._persist_order(order, now, coinbase_id="cb-123", ...)
+       → INSERT INTO orders (...)
 
-   2f. await self._bus.publish(OrderFilled(...))                 order_manager.py:92-102
+   2g. await self._bus.publish(OrderFilled(...))
        → event_bus.py:20  dispatch to PositionTracker._handle_order_filled
 
 3. PositionTracker._handle_order_filled(event)                  position_tracker.py:20
@@ -186,7 +192,45 @@ Precondition: daily_summary has total_pnl = -600.0, max_daily_loss_usd = 500.0
 
 ---
 
-## Trace 7: Partial Sell (position stays open)
+## Trace 7: Balance Pre-flight Rejection (insufficient balance)
+
+```
+1. External publishes OrderRequest(side="BUY", quote_size=50.0)
+
+2. OrderManager._handle_order_request                            order_manager.py:37
+   2a. risk.check(order) → True
+   2b. Balance pre-flight check:                                 order_manager.py:46
+       → self._portfolio_tracker.quote_balance → 0.50            order_manager.py:48
+       → 0.50 < 1.0 → insufficient                              order_manager.py:49
+       → _persist_order(status="FAILED")                         order_manager.py:52
+       → publish OrderFailed(reason="Insufficient balance: $0.50 available (minimum $1.00)")
+       → return
+
+   No Coinbase API call made.
+```
+
+---
+
+## Trace 8: Balance Pre-flight Size-Down (partial balance)
+
+```
+1. External publishes OrderRequest(side="BUY", quote_size=50.0)
+
+2. OrderManager._handle_order_request                            order_manager.py:37
+   2a. risk.check(order) → True
+   2b. Balance pre-flight check:                                 order_manager.py:46
+       → self._portfolio_tracker.quote_balance → 25.0            order_manager.py:48
+       → 25.0 >= 1.0 → OK
+       → 25.0 < 50.0 → size down                                order_manager.py:55
+       → effective_quote_size = 25.0
+   2c. _place_market_order(order, effective_quote_size=25.0)
+       → coinbase.market_buy(quote_size="25.0")
+       (continues as normal buy flow)
+```
+
+---
+
+## Trace 9: Partial Sell (position stays open)
 
 ```
 Precondition: open position BTC-USD, entry_price=50000, qty=0.004
@@ -241,11 +285,11 @@ Precondition: open position BTC-USD, entry_price=50000, qty=0.004
 7.  await kill_switch.initialize()       main.py:63    loads persisted state
 8.  RiskManager(db, bus, ks, settings)   main.py:68
 9.  CoinbaseClient(key, secret, key_file)  main.py:71
-10. OrderManager(db, bus, rm, cb)        main.py:78
-11. order_manager.register(bus)          main.py:79    subscribes to OrderRequest
-12. PositionTracker(db, bus)             main.py:82
-13. position_tracker.register(bus)       main.py:83    subscribes to OrderFilled
-14. PortfolioTracker(db, bus, cb, ...)   main.py:86
+10. PortfolioTracker(db, bus, cb, ...)   main.py:79
+11. OrderManager(db, bus, rm, cb, pt)    main.py:87
+12. order_manager.register(bus)          main.py:91    subscribes to OrderRequest
+13. PositionTracker(db, bus)             main.py:94
+14. position_tracker.register(bus)       main.py:95    subscribes to OrderFilled
 15. MarketData(bus, key, secret, key_file, db)  main.py:95
 16. LLM client from LLM_PROVIDERS[args.llm]    main.py:104-115
 17. PriceBuffer(max_size=50)             main.py:118

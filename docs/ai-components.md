@@ -176,11 +176,11 @@ Dependencies: coinbase-advanced-py (coinbase.rest.RESTClient)
 
 ```
 class OrderManager:
-    __init__(db: Database, bus: EventBus, risk_manager: RiskManager, coinbase: CoinbaseClient)
+    __init__(db: Database, bus: EventBus, risk_manager: RiskManager, coinbase: CoinbaseClient, portfolio_tracker: PortfolioTracker)
     register(bus: EventBus) → None  # subscribes to OrderRequest
 ```
 
-Internal state: _db, _bus, _risk, _coinbase
+Internal state: _db, _bus, _risk, _coinbase, _portfolio_tracker
 
 Module-level helper:
 - `_get(obj, key, default=None)` — gets value from dict (`.get()`) or object (`getattr()`). Used throughout OrderManager to handle both dict and object attribute access from SDK responses.
@@ -190,20 +190,23 @@ Publishes: OrderFilled, OrderFailed
 
 Private methods:
 - `_handle_order_request(order: OrderRequest)` — main handler
-- `_place_market_order(order) → dict` — routes BUY to market_buy, SELL to market_sell
+- `_place_market_order(order, effective_quote_size=None) → dict` — routes BUY to market_buy, SELL to market_sell
 - `_place_limit_order(order) → dict` — calls limit_order
 - `_persist_order(order, created_at, coinbase_id=None, filled_price=None, filled_qty=None, fee=None, status="PENDING")` — INSERT INTO orders
 
 Flow (see ai-traces.md for detailed trace):
 1. risk.check(order) → if False, return (RiskViolation already published by RiskManager)
-2. Place order via CoinbaseClient (sync call)
-3. If exception → publish OrderFailed
-4. If result.success == False → persist as FAILED, publish OrderFailed
-5. If success → poll get_order up to 5 times (1s delay between) for fill details → persist as FILLED → publish OrderFilled
+2. Balance pre-flight check (BUY orders only):
+   - If `portfolio_tracker.quote_balance < $1.00` → persist as FAILED, publish OrderFailed, return
+   - If `quote_balance < order.quote_size` → size down to available balance
+3. Place order via CoinbaseClient (sync call)
+4. If exception → publish OrderFailed
+5. If result.success == False → persist as FAILED, publish OrderFailed
+6. If success → poll get_order up to 5 times (1s delay between) for fill details → persist as FILLED → publish OrderFilled
 
 Fill polling: Market orders may not settle immediately. The handler polls `get_order()` up to 5 times with 1-second delays, checking `filled_size > 0` before extracting fill details.
 
-Dependencies: Database, EventBus, RiskManager, CoinbaseClient
+Dependencies: Database, EventBus, RiskManager, CoinbaseClient, PortfolioTracker
 
 ---
 
@@ -292,9 +295,9 @@ Initialization order:
 5. KillSwitch(db, bus) → await initialize()
 6. RiskManager(db, bus, kill_switch, settings)
 7. CoinbaseClient(key, secret, key_file)
-8. OrderManager(db, bus, risk_manager, coinbase) → register(bus)
-9. PositionTracker(db, bus) → register(bus)
-10. PortfolioTracker(db, bus, coinbase, product_id, interval)
+8. PortfolioTracker(db, bus, coinbase, product_id, interval)
+9. OrderManager(db, bus, risk_manager, coinbase, portfolio_tracker) → register(bus)
+10. PositionTracker(db, bus) → register(bus)
 11. MarketData(bus, key, secret, key_file, db)
 12. LLM client from registry: `LLM_PROVIDERS[args.llm]["class"](**provider_kwargs)`
 13. PriceBuffer(max_size=50)
