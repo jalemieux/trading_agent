@@ -119,6 +119,29 @@ async def test_snapshot_skips_on_api_error(db: Database):
     assert len(rows) == 0
 
 
+async def test_quote_balance_property_updated_by_snapshot(db: Database):
+    """quote_balance property reflects latest USDC balance after snapshot."""
+    bus = EventBus()
+    coinbase = _mock_coinbase([
+        {"currency": "SOL", "available_balance": {"value": "1.0", "currency": "SOL"}},
+        {"currency": "USDC", "available_balance": {"value": "42.50", "currency": "USDC"}},
+    ])
+
+    tracker = PortfolioTracker(
+        db=db, bus=bus, coinbase=coinbase, product_id="SOL-USDC",
+    )
+
+    assert tracker.quote_balance == 0.0  # before any snapshot
+
+    await db.execute(
+        "INSERT INTO price_history (product_id, price, timestamp) VALUES (?, ?, ?)",
+        ("SOL-USDC", 80.0, "2026-01-01T00:01:00Z"),
+    )
+    await tracker.take_snapshot()
+
+    assert tracker.quote_balance == pytest.approx(42.50, abs=0.01)
+
+
 async def test_snapshot_with_zero_base_balance(db: Database):
     """When base currency balance is 0, total_value = quote balance only."""
     bus = EventBus()

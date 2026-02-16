@@ -30,6 +30,11 @@ class PortfolioTracker:
         self._base_currency = parts[0]
         self._quote_currency = parts[1]
         self._product_id = product_id
+        self._quote_balance = 0.0
+
+    @property
+    def quote_balance(self) -> float:
+        return self._quote_balance
 
     async def start(self) -> None:
         self._task = asyncio.create_task(self._snapshot_loop())
@@ -79,6 +84,8 @@ class PortfolioTracker:
                 base_balance = balance
             elif currency == self._quote_currency:
                 quote_balance = balance
+
+        self._quote_balance = quote_balance
 
         # Convert base currency to USD using latest price
         base_value = 0.0

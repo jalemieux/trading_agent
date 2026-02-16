@@ -42,7 +42,7 @@ Reference: [Design Document](plans/2026-02-14-coinbase-trading-bot-design.md)
 |-----------|------|----------------|---------------|-----------|
 | EventBus | `event_bus.py` | Async pub/sub, routes events by type | -- | -- |
 | MarketData | `market_data.py` | WebSocket ticker -> price events | -- | `PriceUpdate` |
-| OrderManager | `order_manager.py` | Places orders via CoinbaseClient, tracks fills | `OrderRequest` | `OrderFilled`, `OrderFailed` |
+| OrderManager | `order_manager.py` | Places orders via CoinbaseClient, tracks fills, balance pre-flight check | `OrderRequest` | `OrderFilled`, `OrderFailed` |
 | RiskManager | `risk_manager.py` | Validates orders against limits | Called by OrderManager | `RiskViolation`, `KillSwitchActivated` |
 | PositionTracker | `position_tracker.py` | Manages positions, computes P&L, writes daily summary | `OrderFilled` | `PositionChanged` |
 | KillSwitch | `kill_switch.py` | Emergency stop, persisted to DB | -- | `KillSwitchActivated` |
@@ -80,7 +80,16 @@ Strategy/Manual
       │        APPROVED   REJECTED
       │           │          │
       │           ▼          ▼
-      │    CoinbaseClient  RiskViolation
+      │    Balance Check   RiskViolation
+      │    (BUY only)
+      │      │
+      │  ┌───┴───────┐
+      │  │           │
+      │  OK/sized  REJECT (<$1)
+      │  down       → OrderFailed
+      │  │
+      │  ▼
+      │    CoinbaseClient
       │           │        (+ KillSwitchActivated
       │           ▼          if daily loss exceeded)
       │      OrderFilled
@@ -259,3 +268,4 @@ OrderRequest arrives
 - **2026-02-15** -- Decoupled strategies from LLM providers. Replaced predictor classes with Strategy ABC (`src/strategy.py`) + concrete strategies (`src/strategies/`) that call `LLMClient` directly. Added `registry.py` for strategy/provider lookup, CLI args (`--strategy`, `--llm`, `--model`). Removed `Predictor` protocol, added `parse_prediction()` helper. Deleted old files: `claude_predictor.py`, `kimi_predictor.py`, `claude_price_only_predictor.py`, `strategy_news_prediction.py`, `strategy_price_only.py`. Simplified config (removed `strategy`, `predictor_type`, `prediction_model`, `openrouter_model`, `openrouter_base_url`). 96 tests.
 - **2026-02-15** -- Added Groq as LLM provider. New `GroqLLMClient` in `llm_client.py` using `groq` SDK (`AsyncGroq`). Registered in `registry.py` with default model `openai/gpt-oss-120b`. Added `groq>=0.13.0` dependency. Available via `--llm groq`. 108 tests.
 - **2026-02-15** -- Added RunReporter component. Appends hourly CSV rows to `runs/performance.csv` with daily P&L, trades, fees, portfolio value, and open positions. Auto-commits and pushes to git via subprocess. Timer-driven async loop (same pattern as PortfolioTracker). 108 tests.
+- **2026-02-16** -- Added balance pre-flight check to OrderManager. BUY orders now check PortfolioTracker.quote_balance before placing: rejects if < $1.00, sizes down if < order size. PortfolioTracker exposes cached `quote_balance` property updated on each snapshot. SELL orders bypass check entirely. 112 tests.
