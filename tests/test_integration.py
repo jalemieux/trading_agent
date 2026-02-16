@@ -8,6 +8,7 @@ from src.event_bus import EventBus
 from src.events import OrderFilled, OrderRequest, PositionChanged
 from src.kill_switch import KillSwitch
 from src.order_manager import OrderManager
+from src.portfolio_tracker import PortfolioTracker
 from src.position_tracker import PositionTracker
 from src.risk_manager import RiskManager
 
@@ -27,7 +28,12 @@ async def system():
     risk_manager = RiskManager(db=db, bus=bus, kill_switch=kill_switch, settings=settings)
 
     mock_coinbase = MagicMock()
-    order_manager = OrderManager(db=db, bus=bus, risk_manager=risk_manager, coinbase=mock_coinbase)
+    mock_portfolio_tracker = MagicMock(spec=PortfolioTracker)
+    mock_portfolio_tracker.quote_balance = 1000.0
+    order_manager = OrderManager(
+        db=db, bus=bus, risk_manager=risk_manager,
+        coinbase=mock_coinbase, portfolio_tracker=mock_portfolio_tracker,
+    )
     order_manager.register(bus)
 
     position_tracker = PositionTracker(db=db, bus=bus)

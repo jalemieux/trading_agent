@@ -76,15 +76,7 @@ async def main() -> None:
         key_file=settings.coinbase_key_file,
     )
 
-    # Order manager
-    order_manager = OrderManager(db=db, bus=bus, risk_manager=risk_manager, coinbase=coinbase)
-    order_manager.register(bus)
-
-    # Position tracker
-    position_tracker = PositionTracker(db=db, bus=bus)
-    position_tracker.register(bus)
-
-    # Portfolio tracker
+    # Portfolio tracker (must be created before OrderManager)
     portfolio_tracker = PortfolioTracker(
         db=db,
         bus=bus,
@@ -92,6 +84,17 @@ async def main() -> None:
         product_id=settings.product_id,
         interval_seconds=settings.prediction_interval_minutes * 60,
     )
+
+    # Order manager
+    order_manager = OrderManager(
+        db=db, bus=bus, risk_manager=risk_manager,
+        coinbase=coinbase, portfolio_tracker=portfolio_tracker,
+    )
+    order_manager.register(bus)
+
+    # Position tracker
+    position_tracker = PositionTracker(db=db, bus=bus)
+    position_tracker.register(bus)
 
     # Market data
     market_data = MarketData(
