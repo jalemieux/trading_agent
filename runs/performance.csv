@@ -17,3 +17,4 @@ timestamp,strategy,llm_provider,model,product_id,daily_pnl,unrealized_pnl,num_tr
 2026-02-16T07:17:10.894101+00:00,price_only,openrouter,moonshotai/kimi-k2.5,SOL-USDC,0.0,0.0,0,0.0,96.614722915752,0
 2026-02-16T08:17:11.684258+00:00,price_only,openrouter,moonshotai/kimi-k2.5,SOL-USDC,0.0,0.0,0,0.0,96.460795239052,0
 2026-02-16T09:17:12.577561+00:00,price_only,openrouter,moonshotai/kimi-k2.5,SOL-USDC,0.0,0.0,0,0.0,97.061113178182,0
+2026-02-16T10:17:13.377097+00:00,price_only,openrouter,moonshotai/kimi-k2.5,SOL-USDC,0.0,0.0,0,0.0,97.373366465202,0
