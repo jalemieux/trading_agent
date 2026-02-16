@@ -7,7 +7,6 @@ export function getDb(): Database.Database {
   if (!db) {
     const dbPath = process.env.DB_PATH || path.resolve(process.cwd(), "../trading_bot.db");
     db = new Database(dbPath, { readonly: true });
-    db.pragma("journal_mode = WAL");
   }
   return db;
 }
