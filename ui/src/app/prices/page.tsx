@@ -24,12 +24,22 @@ interface ChartPoint {
 export default function PricesPage() {
   const [prices, setPrices] = useState<PricePoint[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
+  const [products, setProducts] = useState<string[]>([]);
+  const [product, setProduct] = useState<string>("");
   const [hours, setHours] = useState(24);
 
   useEffect(() => {
-    fetch(`/api/prices?hours=${hours}`).then((r) => r.json()).then(setPrices);
+    fetch("/api/products").then((r) => r.json()).then((ps: string[]) => {
+      setProducts(ps);
+      if (ps.length > 0 && !product) setProduct(ps[0]);
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!product) return;
+    fetch(`/api/prices?hours=${hours}&product_id=${product}`).then((r) => r.json()).then(setPrices);
     fetch("/api/orders?limit=500").then((r) => r.json()).then(setOrders);
-  }, [hours]);
+  }, [hours, product]);
 
   // Merge prices with trade markers
   const filledOrders = orders.filter((o) => o.status === "FILLED" && o.filled_price);
@@ -52,16 +62,29 @@ export default function PricesPage() {
     <div className="space-y-6">
       <h1 className="text-2xl font-bold">Price Chart</h1>
 
-      <div className="flex gap-2">
-        {ranges.map((r) => (
-          <button
-            key={r.label}
-            onClick={() => setHours(r.hours)}
-            className={`rounded px-3 py-1 text-sm ${hours === r.hours ? "bg-zinc-700 text-zinc-100" : "bg-zinc-900 text-zinc-400"}`}
-          >
-            {r.label}
-          </button>
-        ))}
+      <div className="flex items-center gap-4">
+        <div className="flex gap-2">
+          {products.map((p) => (
+            <button
+              key={p}
+              onClick={() => setProduct(p)}
+              className={`rounded px-3 py-1 text-sm ${product === p ? "bg-zinc-700 text-zinc-100" : "bg-zinc-900 text-zinc-400"}`}
+            >
+              {p}
+            </button>
+          ))}
+        </div>
+        <div className="flex gap-2">
+          {ranges.map((r) => (
+            <button
+              key={r.label}
+              onClick={() => setHours(r.hours)}
+              className={`rounded px-3 py-1 text-sm ${hours === r.hours ? "bg-zinc-700 text-zinc-100" : "bg-zinc-900 text-zinc-400"}`}
+            >
+              {r.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4" style={{ height: 500 }}>
