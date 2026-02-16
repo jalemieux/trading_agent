@@ -56,6 +56,10 @@ class OrderManager:
         if not _get(result, "success"):
             error = _get(result, "error_response") or {}
             reason = str(_get(error, "error", "Unknown error"))
+            logger.error(
+                "Order FAILED: %s %s %s — %s (full error: %s)",
+                order.side, order.order_type, order.product_id, reason, error,
+            )
             await self._persist_order(order, now, status="FAILED")
             await self._bus.publish(OrderFailed(order_id=order.order_id, reason=reason))
             return
